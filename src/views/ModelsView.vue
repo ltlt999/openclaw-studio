@@ -26,6 +26,7 @@ const fetchingModels = ref(false)
 const providerForm = ref({ id: '', baseUrl: '', api: 'openai-completions', apiKey: '' })
 const fetchedModels = ref<any[]>([])
 const selectedModels = ref<string[]>([])
+const customModels = ref<{ id: string; name: string }[]>([])
 
 const apiOptions = [
   { label: 'OpenAI 兼容', value: 'openai-completions' },
@@ -79,29 +80,8 @@ async function setDefault(modelId: string) {
 }
 
 async function fetchModels() {
-  // 已有供应商：从网关模型目录加载（无需密钥，与「可用模型」一致）
-  if (editingId.value) {
-    fetchingModels.value = true
-    try {
-      const data = await client.modelsList('all')
-      const list = (data?.models || []).filter((m: any) => m.provider === editingId.value)
-      if (!list.length) {
-        message.info('网关未收录该供应商的模型；如需拉取新模型，请填写 API Key 后重试')
-      } else {
-        fetchedModels.value = list.map((m: any) => ({ id: m.id, name: m.name || m.id }))
-        selectedModels.value = fetchedModels.value.map((m: any) => m.id)
-        message.success(`已加载 ${fetchedModels.value.length} 个模型`)
-      }
-    } catch (e: any) {
-      message.error(e?.message || '加载模型失败')
-    } finally {
-      fetchingModels.value = false
-    }
-    return
-  }
-  // 新供应商：需要 baseUrl + API Key 从供应商 API 拉取
-  if (!providerForm.value.baseUrl || !providerForm.value.apiKey) {
-    message.warning('请先填写 Base URL 和 API Key')
+  if (!providerForm.value.baseUrl) {
+    message.warning('请先填写 Base URL')
     return
   }
   fetchingModels.value = true
@@ -119,13 +99,25 @@ async function fetchModels() {
     const data = await res.json()
     if (!data.ok) throw new Error(data.error || '获取失败')
     fetchedModels.value = data.models
-    selectedModels.value = data.models.map((m: any) => m.id)
-    message.success(`获取到 ${data.models.length} 个模型`)
+    // 预选：已在自定义模型里存在的模型保持选中；否则新供应商全选
+    const existingIds = new Set(customModels.value.map((m) => m.id))
+    const matching = fetchedModels.value.filter((m: any) => existingIds.has(m.id))
+    selectedModels.value = matching.length
+      ? matching.map((m: any) => m.id)
+      : fetchedModels.value.map((m: any) => m.id)
+    message.success(`获取到 ${data.models.length} 个可用模型，可勾选需要保留的`)
   } catch (e: any) {
-    message.error(e?.message || '获取模型失败')
+    message.error(e?.message || '获取失败')
   } finally {
     fetchingModels.value = false
   }
+}
+
+function addCustomModel() {
+  customModels.value.push({ id: '', name: '' })
+}
+function removeCustomModel(i: number) {
+  customModels.value.splice(i, 1)
 }
 
 function openAdd() {
@@ -145,16 +137,9 @@ async function openEdit(id: string) {
   }
   fetchedModels.value = []
   selectedModels.value = []
+  // 已配置的模型放到「自定义模型」，可编辑/保留
+  customModels.value = (p.models || []).map((m: any) => ({ id: m.id, name: m.name || m.id }))
   showAdd.value = true
-  // 从网关目录加载该供应商的模型，与「可用模型」保持一致
-  try {
-    const data = await client.modelsList('all')
-    const list = (data?.models || []).filter((m: any) => m.provider === id)
-    fetchedModels.value = list.map((m: any) => ({ id: m.id, name: m.name || m.id }))
-    selectedModels.value = fetchedModels.value.map((m: any) => m.id)
-  } catch (e) {
-    console.error(e)
-  }
 }
 
 function deleteProvider(id: string) {
@@ -199,9 +184,14 @@ async function saveProvider() {
     const cfg = await client.configGet()
     const hash = cfg?.hash
     if (!hash) throw new Error('无法获取配置版本')
-    const models = fetchedModels.value
-      .filter((m: any) => selectedModels.value.includes(m.id))
-      .map((m: any) => ({ id: m.id, name: m.name || m.id }))
+    const models = [
+      ...fetchedModels.value
+        .filter((m: any) => selectedModels.value.includes(m.id))
+        .map((m: any) => ({ id: m.id, name: m.name || m.id })),
+      ...customModels.value
+        .filter((m) => m.id.trim())
+        .map((m) => ({ id: m.id.trim(), name: m.name.trim() || m.id.trim() })),
+    ]
     const provider: Record<string, any> = { baseUrl, api }
     if (apiKey) provider.apiKey = apiKey // 编辑时留空则保留原密钥
     if (models.length) provider.models = models
@@ -222,6 +212,7 @@ function resetForm() {
   providerForm.value = { id: '', baseUrl: '', api: 'openai-completions', apiKey: '' }
   fetchedModels.value = []
   selectedModels.value = []
+  customModels.value = []
 }
 
 function toggleModel(id: string) {
@@ -322,7 +313,7 @@ onMounted(() =>
               <n-button size="small" :loading="fetchingModels" @click="fetchModels">
                 获取模型
               </n-button>
-              <span class="fetch-hint">{{ editingId ? '从网关目录加载该供应商模型' : '从供应商 API 拉取（需 API Key）' }}</span>
+              <span class="fetch-hint">从 {{ providerForm.baseUrl || '供应商地址' }}/models 拉取全部可用模型</span>
             </div>
             <div v-if="fetchedModels.length" class="model-grid">
               <div
@@ -337,6 +328,22 @@ onMounted(() =>
                   <div class="model-chip-name">{{ m.name || m.id }}</div>
                   <div class="model-chip-id">{{ m.id }}</div>
                 </div>
+              </div>
+            </div>
+
+            <!-- 自定义模型 -->
+            <div class="custom-models">
+              <div class="custom-models-head">
+                <span>自定义模型</span>
+                <n-button size="tiny" type="primary" quaternary @click="addCustomModel">添加</n-button>
+              </div>
+              <div v-for="(cm, i) in customModels" :key="i" class="custom-model-row">
+                <n-input v-model:value="cm.id" size="small" placeholder="模型 ID" style="flex: 1.4" />
+                <n-input v-model:value="cm.name" size="small" placeholder="名称（可选）" style="flex: 1" />
+                <n-button size="tiny" type="error" quaternary @click="removeCustomModel(i)">删除</n-button>
+              </div>
+              <div v-if="!customModels.length" class="custom-empty">
+                暂无自定义模型，点击「添加」手动增加
               </div>
             </div>
           </div>
@@ -488,6 +495,30 @@ onMounted(() =>
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.custom-models {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.custom-models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.custom-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.custom-empty {
+  font-size: 12px;
+  color: #666670;
 }
 .modal-actions {
   display: flex;

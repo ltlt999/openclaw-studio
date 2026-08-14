@@ -155,6 +155,9 @@ async function fetchProviderModels({ baseUrl, apiKey, apiType }) {
     })
   }
   if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && !apiKey) {
+      throw new Error(`需要有效的 API Key（HTTP ${res.status}），请填写后重试`)
+    }
     throw new Error(`供应商返回 HTTP ${res.status}`)
   }
   const data = await res.json()
@@ -217,7 +220,7 @@ const server = http.createServer((req, res) => {
           }
         }
         if (!b) throw new Error('缺少 baseUrl')
-        if (!k) throw new Error('缺少 API Key（该供应商密钥不在本机配置中，请手动填写）')
+        // 无 key 也尝试拉取（部分供应商模型列表公开）；401/403 时会提示需要 key
         const models = await fetchProviderModels({ baseUrl: b, apiKey: k, apiType: t })
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, models }))
