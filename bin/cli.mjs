@@ -125,6 +125,42 @@ function sendFile(res, filePath) {
   fs.createReadStream(filePath).pipe(res)
 }
 
+// 从供应商 API 拉取模型列表（OpenAI 兼容 / Anthropic）
+async function fetchProviderModels({ baseUrl, apiKey, apiType }) {
+  const type = apiType || 'openai-completions'
+  let res
+  if (type === 'anthropic-messages') {
+    res = await fetch(`${baseUrl}/models`, {
+      headers: {
+        'x-api-key': apiKey || '',
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+    })
+  } else {
+    res = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey || ''}` },
+    })
+  }
+  if (!res.ok) {
+    throw new Error(`供应商返回 HTTP ${res.status}`)
+  }
+  const data = await res.json()
+  const list = data?.data || data?.models || []
+  return list.map((m) => ({ id: m.id || m.model, name: m.name || m.id || m.model })).filter((m) => m.id)
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', (chunk) => { body += chunk })
+    req.on('end', () => {
+      try { resolve(JSON.parse(body || '{}')) } catch (e) { reject(new Error('JSON 解析失败')) }
+    })
+    req.on('error', reject)
+  })
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   let pathname
@@ -150,6 +186,21 @@ const server = http.createServer((req, res) => {
         },
       }),
     )
+    return
+  }
+
+  if (pathname === '/api/fetch-models' && req.method === 'POST') {
+    readJsonBody(req)
+      .then(async ({ baseUrl, apiKey, apiType }) => {
+        if (!baseUrl) throw new Error('缺少 baseUrl')
+        const models = await fetchProviderModels({ baseUrl, apiKey, apiType })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, models }))
+      })
+      .catch((e) => {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: e?.message || '获取失败' }))
+      })
     return
   }
 

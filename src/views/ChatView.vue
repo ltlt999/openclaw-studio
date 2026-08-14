@@ -97,6 +97,20 @@ function roleLabel(m: any): string {
   return m.role || '消息'
 }
 
+// 格式化消息时间：今天显示时分，昨天显示「昨天」，更早显示日期
+function formatTime(ts: number | undefined): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (d.toDateString() === now.toDateString()) return hm
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return `昨天 ${hm}`
+  return `${d.getMonth() + 1}-${d.getDate()} ${hm}`
+}
+
 // 提取消息显示文本：兼容字符串与块数组（助手流式 content）
 function messageText(m: any): string {
   if (typeof m.text === 'string') return m.text
@@ -194,7 +208,10 @@ onUnmounted(() => {
       <template v-else>
         <div class="messages">
           <div v-for="m in entries" :key="m.id || m.messageId || Math.random()" class="msg" :class="m.role">
-            <div class="msg-role">{{ roleLabel(m) }}</div>
+            <div class="msg-role">
+              <span>{{ roleLabel(m) }}</span>
+              <span v-if="m.timestamp" class="msg-time">{{ formatTime(m.timestamp) }}</span>
+            </div>
             <div class="msg-body">
               <Markdown v-if="messageText(m)" :source="messageText(m)" />
               <div v-for="(t, ti) in messageTools(m)" :key="ti" class="tool-call">
@@ -359,6 +376,14 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.msg-time {
+  font-size: 11px;
+  color: #666670;
 }
 
 .msg-body {
