@@ -12,35 +12,59 @@
 - **用量分析**：查看用量数据
 - **设置**：连接凭证、主题
 
-## 一条命令安装
+## 安装
 
-> 前提：目标机器已安装 OpenClaw 且 Node.js ≥ 22。
+> 前提：目标机器已安装 OpenClaw 且 Node.js ≥ 22（Windows / macOS / Linux 均可）。
+
+### 方式一：从源码安装（当前可用）
 
 ```bash
-# 安装
+git clone https://github.com/ltlt999/openclaw-studio.git
+cd openclaw-studio
+npm install
+npm run build
+```
+
+### 方式二：npm 一条命令（发布到 npm 后可用）
+
+```bash
 npm install -g openclaw-studio
 
-# 启动（默认端口 41739，连接本机 Gateway ws://127.0.0.1:18789）
-openclaw-studio
+# 零安装直接运行
+npx openclaw-studio
+```
+
+## 启动
+
+### 本机使用
+
+```bash
+node bin/cli.mjs
 ```
 
 浏览器打开 `http://127.0.0.1:41739`。
 
-零安装直接运行：
+### 远程访问（服务器部署）
 
 ```bash
-npx openclaw-studio
-```
+# 方式一安装的启动方式
+node bin/cli.mjs --host 0.0.0.0 --port 41739 --gateway ws://127.0.0.1:18789
 
-## 服务器部署（远程访问）
-
-部署到服务器时，需要让 UI 监听外部网卡，并指向 Gateway 地址：
-
-```bash
+# 方式二安装的启动方式
 openclaw-studio --host 0.0.0.0 --port 41739 --gateway ws://127.0.0.1:18789
 ```
 
-然后浏览器访问 `http://<服务器IP>:41739`。
+浏览器访问 `http://<服务器IP>:41739`。
+
+后台常驻：
+
+```bash
+# Linux / macOS
+nohup node bin/cli.mjs --host 0.0.0.0 --gateway ws://127.0.0.1:18789 > /tmp/openclaw-studio.log 2>&1 &
+
+# Windows PowerShell
+Start-Process node -ArgumentList "bin/cli.mjs","--host","0.0.0.0","--gateway","ws://127.0.0.1:18789" -WindowStyle Hidden
+```
 
 ### 参数
 
@@ -52,9 +76,11 @@ openclaw-studio --host 0.0.0.0 --port 41739 --gateway ws://127.0.0.1:18789
 
 也可用环境变量 `OPENCLAW_STUDIO_PORT` / `OPENCLAW_STUDIO_HOST` / `OPENCLAW_STUDIO_GATEWAY`。
 
+> 部署到云服务器需在**安全组/防火墙**放行 `--port` 端口（Windows 为入站规则）。
+
 ### 鉴权
 
-Gateway 默认启用共享密钥鉴权（即使 loopback）。首次打开 UI 时，在 **设置** 页填入 Gateway 的 token 或 password（存于浏览器 localStorage），保存后自动重连。
+Gateway 默认启用共享密钥鉴权（即使 loopback）。首次打开 UI 时，在 **设置** 页填入 Gateway 的 token 或 password（存于浏览器 localStorage），保存后自动重连。token 见服务器上 OpenClaw 的配置或启动日志。
 
 > 架构说明：浏览器只连本 UI 的 `/ws`（同源），由 CLI 代理转发到 Gateway，因此无跨域问题；Gateway 地址是服务端配置项，换机器无需改前端。
 
