@@ -45,15 +45,13 @@ async function load() {
   if (!conn.connected) return
   loading.value = true
   try {
-    const data = await client.modelsList()
-    models.value = Array.isArray(data) ? data : data?.models ?? []
-    try {
-      const cfg = await client.configGet()
-      currentModel.value = cfg?.resolved?.agents?.defaults?.model?.primary ?? ''
-      providers.value = cfg?.resolved?.models?.providers ?? {}
-    } catch (e) {
-      console.error(e)
-    }
+    const cfg = await client.configGet()
+    currentModel.value = cfg?.resolved?.agents?.defaults?.model?.primary ?? ''
+    providers.value = cfg?.resolved?.models?.providers ?? {}
+    // 可用模型 = 各供应商实际配置的模型（与供应商卡片一致）
+    models.value = Object.entries(providers.value).flatMap(([providerId, p]) =>
+      (p?.models || []).map((m: any) => ({ ...m, provider: providerId })),
+    )
   } catch (e: any) {
     if (e?.message) message.error(e.message)
   } finally {
