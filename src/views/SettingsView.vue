@@ -11,6 +11,7 @@ const password = ref(conn.password)
 const saving = ref(false)
 
 const autoStatus = ref<string>('')
+const probeStatus = ref<string>('')
 const gateway = ref('')
 
 onMounted(async () => {
@@ -24,6 +25,11 @@ onMounted(async () => {
       autoStatus.value = '服务器网关未启用鉴权（auth.mode=none），无需填写'
     } else {
       autoStatus.value = '未检测到可自动读取的网关鉴权；若下方填写凭证则优先使用手动凭证'
+    }
+    if (data.probe) {
+      probeStatus.value = data.probe.ok
+        ? `自检通过：${data.probe.message}`
+        : `自检失败：${data.probe.message}`
     }
   } catch {
     autoStatus.value = ''
@@ -52,9 +58,17 @@ function save() {
     <n-alert
       :type="autoStatus ? 'success' : 'info'"
       :bordered="false"
-      style="margin-bottom: 20px"
+      style="margin-bottom: 12px"
     >
       {{ autoStatus || '正在检测服务器上的 OpenClaw 配置…' }}
+    </n-alert>
+    <n-alert
+      v-if="probeStatus"
+      :type="probeStatus.startsWith('自检通过') ? 'success' : 'error'"
+      :bordered="false"
+      style="margin-bottom: 20px"
+    >
+      {{ probeStatus }}
     </n-alert>
 
     <div class="form-wrap">

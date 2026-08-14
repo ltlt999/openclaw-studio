@@ -9,6 +9,7 @@ import {
   isLoopbackGateway,
   injectAuth,
 } from './lib/gateway-config.mjs'
+import { probeGateway } from './lib/self-check.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
@@ -45,6 +46,13 @@ if (useAutoAuth) {
 } else if (!gatewayCfg) {
   console.log('[openclaw-studio] 未找到 OpenClaw 配置（若需鉴权请在 UI 设置页填写 token）')
 }
+
+// ---- 启动自检：网关连通性 + 鉴权 ----
+let probeResult = null
+probeGateway({ url: GATEWAY, auth: useAutoAuth ? gatewayCfg : null }).then((r) => {
+  probeResult = r
+  console.log(`[openclaw-studio] 网关自检: ${r.ok ? '通过' : '失败'} - ${r.message}`)
+})
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -89,6 +97,7 @@ const server = http.createServer((req, res) => {
         gateway: GATEWAY,
         autoAuth: useAutoAuth ? (gatewayCfg.token ? 'token' : 'password') : gatewayCfg?.mode === 'none' ? 'none' : null,
         configPath: gatewayCfg?.path ?? null,
+        probe: probeResult,
       }),
     )
     return
