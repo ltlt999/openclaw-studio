@@ -79,12 +79,29 @@ async function setDefault(modelId: string) {
 }
 
 async function fetchModels() {
-  if (!providerForm.value.baseUrl && !editingId.value) {
-    message.warning('请先填写 Base URL')
+  // 已有供应商：从网关模型目录加载（无需密钥，与「可用模型」一致）
+  if (editingId.value) {
+    fetchingModels.value = true
+    try {
+      const data = await client.modelsList('all')
+      const list = (data?.models || []).filter((m: any) => m.provider === editingId.value)
+      if (!list.length) {
+        message.info('网关未收录该供应商的模型；如需拉取新模型，请填写 API Key 后重试')
+      } else {
+        fetchedModels.value = list.map((m: any) => ({ id: m.id, name: m.name || m.id }))
+        selectedModels.value = fetchedModels.value.map((m: any) => m.id)
+        message.success(`已加载 ${fetchedModels.value.length} 个模型`)
+      }
+    } catch (e: any) {
+      message.error(e?.message || '加载模型失败')
+    } finally {
+      fetchingModels.value = false
+    }
     return
   }
-  if (!providerForm.value.apiKey && !editingId.value) {
-    message.warning('请先填写 API Key（编辑已有供应商时可用已配置的密钥）')
+  // 新供应商：需要 baseUrl + API Key 从供应商 API 拉取
+  if (!providerForm.value.baseUrl || !providerForm.value.apiKey) {
+    message.warning('请先填写 Base URL 和 API Key')
     return
   }
   fetchingModels.value = true
@@ -117,7 +134,7 @@ function openAdd() {
   showAdd.value = true
 }
 
-function openEdit(id: string) {
+async function openEdit(id: string) {
   editingId.value = id
   const p = providers.value[id] || {}
   providerForm.value = {
@@ -126,9 +143,18 @@ function openEdit(id: string) {
     api: p.api || 'openai-completions',
     apiKey: '', // 密钥不回显，留空表示保持不变
   }
-  fetchedModels.value = (p.models || []).map((m: any) => ({ id: m.id, name: m.name || m.id }))
-  selectedModels.value = (p.models || []).map((m: any) => m.id)
+  fetchedModels.value = []
+  selectedModels.value = []
   showAdd.value = true
+  // 从网关目录加载该供应商的模型，与「可用模型」保持一致
+  try {
+    const data = await client.modelsList('all')
+    const list = (data?.models || []).filter((m: any) => m.provider === id)
+    fetchedModels.value = list.map((m: any) => ({ id: m.id, name: m.name || m.id }))
+    selectedModels.value = fetchedModels.value.map((m: any) => m.id)
+  } catch (e) {
+    console.error(e)
+  }
 }
 
 function deleteProvider(id: string) {
@@ -291,21 +317,26 @@ onMounted(() =>
           />
         </n-form-item>
         <n-form-item label="模型列表">
-          <n-button size="small" :loading="fetchingModels" @click="fetchModels">
-            获取模型
-          </n-button>
-          <div v-if="fetchedModels.length" class="model-grid">
-            <div
-              v-for="m in fetchedModels"
-              :key="m.id"
-              class="model-chip"
-              :class="{ selected: selectedModels.includes(m.id) }"
-              @click="toggleModel(m.id)"
-            >
-              <span class="model-chip-check">{{ selectedModels.includes(m.id) ? '✓' : '' }}</span>
-              <div class="model-chip-body">
-                <div class="model-chip-name">{{ m.name || m.id }}</div>
-                <div class="model-chip-id">{{ m.id }}</div>
+          <div class="model-list-wrap">
+            <div class="model-fetch-row">
+              <n-button size="small" :loading="fetchingModels" @click="fetchModels">
+                获取模型
+              </n-button>
+              <span class="fetch-hint">{{ editingId ? '从网关目录加载该供应商模型' : '从供应商 API 拉取（需 API Key）' }}</span>
+            </div>
+            <div v-if="fetchedModels.length" class="model-grid">
+              <div
+                v-for="m in fetchedModels"
+                :key="m.id"
+                class="model-chip"
+                :class="{ selected: selectedModels.includes(m.id) }"
+                @click="toggleModel(m.id)"
+              >
+                <span class="model-chip-check">{{ selectedModels.includes(m.id) ? '✓' : '' }}</span>
+                <div class="model-chip-body">
+                  <div class="model-chip-name">{{ m.name || m.id }}</div>
+                  <div class="model-chip-id">{{ m.id }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -387,8 +418,20 @@ onMounted(() =>
   gap: 6px;
   margin-top: 6px;
 }
+.model-list-wrap {
+  width: 100%;
+}
+.model-fetch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.fetch-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
 .model-grid {
-  margin-top: 10px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
