@@ -112,6 +112,9 @@ export class GatewayClient {
   configPatch(raw: string, baseHash: string) {
     return this.conn.request('config.patch', { raw, baseHash })
   }
+  configApply(raw: string, baseHash: string) {
+    return this.conn.request('config.apply', { raw, baseHash })
+  }
 
   // ---- usage ----
   usage() {
