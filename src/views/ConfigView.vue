@@ -1,0 +1,68 @@
+<script setup lang="ts">
+import { ref, watch, onMounted } from 'vue'
+import { NSpin, NEmpty } from 'naive-ui'
+import { useConnectionStore } from '../stores/connection'
+import { getClient } from '../rpc/client'
+
+const conn = useConnectionStore()
+const client = getClient()
+const configText = ref('')
+const loading = ref(false)
+
+async function load() {
+  if (!conn.connected) return
+  loading.value = true
+  try {
+    const data = await client.configGet()
+    configText.value = JSON.stringify(data, null, 2)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() =>
+  watch(
+    () => conn.status,
+    (s) => {
+      if (s === 'connected') load()
+    },
+    { immediate: true },
+  ),
+)
+</script>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <h2>配置</h2>
+    </div>
+    <n-spin :show="loading">
+      <pre v-if="configText" class="json">{{ configText }}</pre>
+      <n-empty v-else-if="!loading" description="暂无配置数据" />
+    </n-spin>
+  </div>
+</template>
+
+<style scoped>
+.page {
+  padding: 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+.page-head h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+.json {
+  background: #1a1a20;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>
