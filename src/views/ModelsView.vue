@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import {
   NButton, NModal, NForm, NFormItem, NInput, NSelect, NEmpty, NTag,
-  useMessage, NCheckbox,
+  useMessage, NCheckbox, useDialog,
 } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
@@ -10,6 +10,7 @@ import { getClient } from '../rpc/client'
 const conn = useConnectionStore()
 const client = getClient()
 const message = useMessage()
+const dialog = useDialog()
 
 const models = ref<any[]>([])
 const currentModel = ref<string>('')
@@ -17,8 +18,9 @@ const providers = ref<Record<string, any>>({})
 const loading = ref(false)
 const switching = ref(false)
 
-// 添加供应商对话框
+// 添加/编辑供应商对话框
 const showAdd = ref(false)
+const editingId = ref<string | null>(null)
 const savingProvider = ref(false)
 const fetchingModels = ref(false)
 const providerForm = ref({ id: '', baseUrl: '', api: 'openai-completions', apiKey: '' })
@@ -104,13 +106,56 @@ async function fetchModels() {
   }
 }
 
+function openAdd() {
+  editingId.value = null
+  resetForm()
+  showAdd.value = true
+}
+
+function openEdit(id: string) {
+  editingId.value = id
+  const p = providers.value[id] || {}
+  providerForm.value = {
+    id,
+    baseUrl: p.baseUrl || '',
+    api: p.api || 'openai-completions',
+    apiKey: p.apiKey || '',
+  }
+  fetchedModels.value = (p.models || []).map((m: any) => ({ id: m.id, name: m.name || m.id }))
+  selectedModels.value = (p.models || []).map((m: any) => m.id)
+  showAdd.value = true
+}
+
+function deleteProvider(id: string) {
+  dialog.warning({
+    title: '删除供应商',
+    content: `确定删除供应商「${id}」吗？其模型将不再可用。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        const cfg = await client.configGet()
+        const hash = cfg?.hash
+        const parsed = JSON.parse(cfg?.raw || '{}')
+        if (parsed?.models?.providers) delete parsed.models.providers[id]
+        await client.configApply(JSON.stringify(parsed, null, 2), hash)
+        message.success(`已删除供应商 ${id}`)
+        await load()
+      } catch (e: any) {
+        message.error(e?.message || '删除失败')
+      }
+    },
+  })
+}
+
 async function saveProvider() {
-  const { id, baseUrl, api, apiKey } = providerForm.value
+  const id = editingId.value || providerForm.value.id
+  const { baseUrl, api, apiKey } = providerForm.value
   if (!id || !baseUrl || !apiKey) {
     message.warning('请填写供应商 ID、Base URL 和 API Key')
     return
   }
-  if (!/^[a-z0-9-]+$/.test(id)) {
+  if (!editingId.value && !/^[a-z0-9-]+$/.test(id)) {
     message.warning('供应商 ID 只能用小写字母、数字和连字符')
     return
   }
@@ -126,7 +171,7 @@ async function saveProvider() {
     if (models.length) provider.models = models
     const raw = JSON.stringify({ models: { providers: { [id]: provider } } })
     await client.configPatch(raw, hash)
-    message.success(`已添加供应商 ${id}`)
+    message.success(`已保存供应商 ${id}`)
     showAdd.value = false
     resetForm()
     await load()
@@ -170,7 +215,7 @@ onMounted(() =>
         当前默认：<b>{{ currentModel }}</b>
       </span>
       <div class="spacer"></div>
-      <n-button size="small" type="primary" @click="showAdd = true">添加供应商</n-button>
+      <n-button size="small" type="primary" @click="openAdd">添加供应商</n-button>
     </div>
 
     <!-- 已配置的供应商 -->
@@ -184,6 +229,10 @@ onMounted(() =>
           </div>
           <div class="card-sub">{{ p.baseUrl }}</div>
           <div class="card-sub">{{ (p.models || []).length }} 个模型</div>
+          <div class="provider-actions">
+            <n-button size="tiny" type="primary" quaternary @click="openEdit(id)">编辑</n-button>
+            <n-button size="tiny" type="error" quaternary @click="deleteProvider(id)">删除</n-button>
+          </div>
         </div>
       </div>
     </div>
@@ -211,11 +260,11 @@ onMounted(() =>
     </div>
     <n-empty v-else-if="!loading" description="暂无模型数据" />
 
-    <!-- 添加供应商对话框 -->
-    <n-modal v-model:show="showAdd" preset="card" title="添加模型供应商" style="width: 520px">
+    <!-- 添加/编辑供应商对话框 -->
+    <n-modal v-model:show="showAdd" preset="card" style="width: 520px" :title="editingId ? `编辑供应商：${editingId}` : '添加模型供应商'">
       <n-form label-placement="top">
         <n-form-item label="供应商 ID（如 my-openai）">
-          <n-input v-model:value="providerForm.id" placeholder="小写字母/数字/连字符" />
+          <n-input v-model:value="providerForm.id" placeholder="小写字母/数字/连字符" :disabled="editingId !== null" />
         </n-form-item>
         <n-form-item label="API 类型">
           <n-select v-model:value="providerForm.api" :options="apiOptions" />
@@ -309,6 +358,11 @@ onMounted(() =>
   color: var(--text-dim);
   margin: 6px 0 10px;
   word-break: break-all;
+}
+.provider-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 .model-pick {
   margin-top: 10px;
