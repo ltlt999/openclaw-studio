@@ -36,6 +36,15 @@ export function defaultWsUrl(): string {
   return 'ws://127.0.0.1:18789'
 }
 
+function extractError(frame: any): string {
+  const code = typeof frame?.code === 'string' ? frame.code : ''
+  const detailCode = typeof frame?.details?.code === 'string' ? frame.details.code : ''
+  const reason = typeof frame?.details?.reason === 'string' ? frame.details.reason : ''
+  const message = typeof frame?.message === 'string' ? frame.message : ''
+  const parts = [code, detailCode, reason, message].filter(Boolean)
+  return parts.join(' · ') || '连接失败'
+}
+
 export class GatewayConnection {
   private ws: WebSocket | null = null
   private pending = new Map<string, Pending>()
@@ -101,18 +110,24 @@ export class GatewayConnection {
     try {
       ws = new WebSocket(this.url)
     } catch {
+      this.lastError = '无法建立 WebSocket 连接'
       this.scheduleReconnect()
       return
     }
     this.ws = ws
 
+    // 只处理“当前”连接的帧与事件，忽略被替换掉的旧连接的迟到回调
+    const isCurrent = () => this.ws === ws
+
     const handshakeTimer = setTimeout(() => {
+      if (!isCurrent()) return
+      this.lastError = '握手超时'
       try { ws.close() } catch {}
     }, this.handshakeTimeoutMs)
 
     let sentConnect = false
     const sendConnect = () => {
-      if (sentConnect) return
+      if (!isCurrent() || sentConnect) return
       sentConnect = true
       const params: Record<string, any> = {
         minProtocol: PROTOCOL,
@@ -127,9 +142,13 @@ export class GatewayConnection {
     }
 
     // 等 connect.challenge，超时 1s 后直接发 connect（兼容无需 challenge 的鉴权模式）
-    const challengeTimer = setTimeout(sendConnect, 1000)
+    const challengeTimer = setTimeout(() => {
+      if (!isCurrent()) return
+      sendConnect()
+    }, 1000)
 
     ws.onmessage = (ev) => {
+      if (!isCurrent()) return
       const frame = parseFrame(String(ev.data))
       if (!frame) return
 
@@ -147,7 +166,7 @@ export class GatewayConnection {
           this.setStatus('connected')
           this.flushQueue()
         } else {
-          this.lastError = frame.message || frame.code || '握手失败'
+          this.lastError = extractError(frame)
           this.setStatus('disconnected')
           try { ws.close() } catch {}
         }
@@ -157,6 +176,7 @@ export class GatewayConnection {
     }
 
     ws.onclose = () => {
+      if (!isCurrent()) return
       clearTimeout(handshakeTimer)
       clearTimeout(challengeTimer)
       this.pending.forEach((p) => {
@@ -164,6 +184,9 @@ export class GatewayConnection {
         p.reject(new Error('连接已断开'))
       })
       this.pending.clear()
+      if (!this.manualClose && !this.lastError) {
+        this.lastError = '连接被网关关闭（可能是鉴权失败或网关不可达）'
+      }
       this.setStatus('disconnected')
       if (!this.manualClose) this.scheduleReconnect()
     }
@@ -179,8 +202,13 @@ export class GatewayConnection {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    try { this.ws?.close() } catch {}
+    const ws = this.ws
     this.ws = null
+    if (ws) {
+      try { ws.onclose = null } catch {}
+      try { ws.onmessage = null } catch {}
+      try { ws.close() } catch {}
+    }
     this.setStatus('disconnected')
   }
 
@@ -191,7 +219,7 @@ export class GatewayConnection {
         clearTimeout(p.timer)
         this.pending.delete(frame.id)
         if (frame.ok) p.resolve(frame.payload)
-        else p.reject(new Error(frame.message || frame.code || '请求失败'))
+        else p.reject(new Error(extractError(frame)))
       }
     } else if (frame.type === 'event') {
       this.eventListeners.get(frame.event)?.forEach((cb) => cb(frame.payload))

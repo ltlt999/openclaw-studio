@@ -82,15 +82,13 @@ wss.on('connection', (client) => {
   let upstream
   try {
     upstream = new WebSocket(GATEWAY)
-  } catch {
+  } catch (err) {
+    console.error(`[openclaw-studio] 无法创建网关连接: ${err?.message || err}`)
     client.close(1011, 'gateway connect failed')
     return
   }
 
-  const closeBoth = () => {
-    try { client.close() } catch {}
-    try { upstream.close() } catch {}
-  }
+  let clientClosed = false
 
   client.on('message', (data) => {
     if (upstream.readyState === WebSocket.OPEN) upstream.send(data)
@@ -98,10 +96,23 @@ wss.on('connection', (client) => {
   upstream.on('message', (data) => {
     if (client.readyState === WebSocket.OPEN) client.send(data)
   })
-  upstream.on('error', closeBoth)
-  upstream.on('close', closeBoth)
-  client.on('error', closeBoth)
+  upstream.on('error', (err) => {
+    console.error(`[openclaw-studio] 无法连接网关 ${GATEWAY}: ${err?.message || err}`)
+    try { client.close() } catch {}
+  })
+  upstream.on('close', (code, reason) => {
+    if (!clientClosed) {
+      console.error(
+        `[openclaw-studio] 网关提前关闭连接 (code=${code}${reason ? ` reason=${reason}` : ''})，可能鉴权失败或网关不可达`,
+      )
+    }
+    try { client.close() } catch {}
+  })
+  client.on('error', () => {
+    try { upstream.close() } catch {}
+  })
   client.on('close', () => {
+    clientClosed = true
     try { upstream.close() } catch {}
   })
 })

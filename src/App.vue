@@ -75,6 +75,7 @@ onMounted(() => {
                   <span class="page-title">{{ currentTitle }}</span>
                 </div>
                 <div class="header-right">
+                  <span v-if="conn.error" class="conn-error" :title="conn.error">{{ conn.error }}</span>
                   <n-tag :type="statusMap[conn.status].type" size="small" round>
                     {{ statusMap[conn.status].text }}
                   </n-tag>
@@ -128,6 +129,16 @@ onMounted(() => {
 .page-title {
   font-size: 16px;
   font-weight: 600;
+}
+
+.conn-error {
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e88080;
+  font-size: 12px;
+  margin-right: 10px;
 }
 
 .content {
