@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { NSpin, NButton, NAlert, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
 import ConfigEditor from '../components/ConfigEditor.vue'
+import ConfigForm from '../components/ConfigForm.vue'
 
 const conn = useConnectionStore()
 const client = getClient()
@@ -14,6 +15,15 @@ const hash = ref<string>('')
 const loading = ref(false)
 const saving = ref(false)
 const error = ref<string>('')
+const mode = ref<'form' | 'json'>('form')
+
+const parsed = computed(() => {
+  try {
+    return JSON.parse(raw.value || '{}')
+  } catch {
+    return {}
+  }
+})
 
 async function load() {
   if (!conn.connected) return
@@ -31,6 +41,7 @@ async function load() {
 }
 
 async function save(json: string) {
+  if (!json) return
   if (saving.value) return
   saving.value = true
   error.value = ''
@@ -62,7 +73,20 @@ onMounted(() =>
   <div class="page">
     <div class="page-head">
       <h2>配置</h2>
-      <span class="hint">JSON 编辑器，保存会整体应用（含打码密钥会被保留）</span>
+      <div class="mode-switch">
+        <n-button
+          size="small"
+          :type="mode === 'form' ? 'primary' : 'default'"
+          @click="mode = 'form'"
+        >表单模式</n-button>
+        <n-button
+          size="small"
+          :type="mode === 'json' ? 'primary' : 'default'"
+          @click="mode = 'json'"
+        >JSON 模式</n-button>
+      </div>
+      <span v-if="mode === 'form'" class="hint">图形化编辑常用配置；复杂字段会以 JSON 显示</span>
+      <span v-else class="hint">JSON 编辑，保存时打码密钥会被保留</span>
       <div class="spacer"></div>
       <n-button size="small" :loading="loading" @click="load">刷新</n-button>
     </div>
@@ -72,7 +96,8 @@ onMounted(() =>
     </n-alert>
 
     <n-spin :show="loading">
-      <ConfigEditor v-if="raw" :value="raw" @save="save" />
+      <ConfigForm v-if="mode === 'form' && raw" :value="parsed" @save="save" />
+      <ConfigEditor v-else-if="raw" :value="raw" @save="save" />
     </n-spin>
   </div>
 </template>
@@ -96,6 +121,10 @@ onMounted(() =>
 .hint {
   font-size: 12px;
   color: var(--text-dim);
+}
+.mode-switch {
+  display: flex;
+  gap: 6px;
 }
 .spacer {
   flex: 1;
