@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { NInput, NButton, NForm, NFormItem, NAlert, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 
@@ -9,6 +9,26 @@ const message = useMessage()
 const token = ref(conn.token)
 const password = ref(conn.password)
 const saving = ref(false)
+
+const autoStatus = ref<string>('')
+const gateway = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/api/status')
+    const data = await res.json()
+    gateway.value = data.gateway || ''
+    if (data.autoAuth === 'token' || data.autoAuth === 'password') {
+      autoStatus.value = `已自动读取服务器上的 OpenClaw 配置，使用 ${data.autoAuth === 'token' ? 'token' : '密码'} 鉴权，无需手动填写`
+    } else if (data.autoAuth === 'none') {
+      autoStatus.value = '服务器网关未启用鉴权（auth.mode=none），无需填写'
+    } else {
+      autoStatus.value = '未检测到可自动读取的网关鉴权；若下方填写凭证则优先使用手动凭证'
+    }
+  } catch {
+    autoStatus.value = ''
+  }
+})
 
 function save() {
   saving.value = true
@@ -26,18 +46,34 @@ function save() {
       <h2>设置</h2>
     </div>
 
-    <n-alert type="info" :bordered="false" style="margin-bottom: 20px">
-      Gateway 地址由启动命令的 <code>--gateway</code> 参数决定（服务端），浏览器无需配置。
-      只有当 Gateway 开启了鉴权时才需要填写下面的凭证。
+    <n-alert v-if="gateway" type="info" :bordered="false" style="margin-bottom: 12px">
+      网关地址：<code>{{ gateway }}</code>
+    </n-alert>
+    <n-alert
+      :type="autoStatus ? 'success' : 'info'"
+      :bordered="false"
+      style="margin-bottom: 20px"
+    >
+      {{ autoStatus || '正在检测服务器上的 OpenClaw 配置…' }}
     </n-alert>
 
     <div class="form-wrap">
       <n-form label-placement="top">
-        <n-form-item label="Token（可选）">
-          <n-input v-model:value="token" type="password" show-password-on="click" placeholder="Gateway auth token" />
+        <n-form-item label="Token（可选，覆盖自动检测）">
+          <n-input
+            v-model:value="token"
+            type="password"
+            show-password-on="click"
+            placeholder="Gateway auth token"
+          />
         </n-form-item>
-        <n-form-item label="密码（可选）">
-          <n-input v-model:value="password" type="password" show-password-on="click" placeholder="Gateway auth password" />
+        <n-form-item label="密码（可选，覆盖自动检测）">
+          <n-input
+            v-model:value="password"
+            type="password"
+            show-password-on="click"
+            placeholder="Gateway auth password"
+          />
         </n-form-item>
         <n-button type="primary" :loading="saving" @click="save">保存并重连</n-button>
       </n-form>
