@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { NSpin, NEmpty } from 'naive-ui'
+import { NSpin, NEmpty, NTag } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
 
 const conn = useConnectionStore()
 const client = getClient()
 const agents = ref<any[]>([])
+const defaultId = ref<string | null>(null)
 const loading = ref(false)
 
 async function load() {
@@ -14,7 +15,8 @@ async function load() {
   loading.value = true
   try {
     const data = await client.agentsList()
-    agents.value = Array.isArray(data) ? data : data?.agents ?? []
+    agents.value = data?.agents ?? (Array.isArray(data) ? data : [])
+    defaultId.value = data?.defaultId ?? null
   } catch (e) {
     console.error(e)
   } finally {
@@ -41,8 +43,15 @@ onMounted(() =>
     <n-spin :show="loading">
       <div v-if="agents.length" class="cards">
         <div v-for="(a, i) in agents" :key="i" class="card">
-          <div class="card-title">{{ a.name || a.id || a.agentId }}</div>
-          <div class="card-sub">{{ a.kind || a.model || '' }}</div>
+          <div class="card-title-row">
+            <span class="card-title">
+              {{ a.emoji ? a.emoji + ' ' : '' }}{{ a.name || a.id || a.agentId }}
+            </span>
+            <n-tag v-if="a.id === defaultId || a.agentId === defaultId" type="info" size="small" round>
+              默认
+            </n-tag>
+          </div>
+          <div class="card-sub">{{ a.model || a.workspace || '' }}</div>
         </div>
       </div>
       <n-empty v-else-if="!loading" description="暂无 Agent" />
@@ -70,6 +79,12 @@ onMounted(() =>
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
+}
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .card-title {
   font-weight: 600;

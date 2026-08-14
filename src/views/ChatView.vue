@@ -1,21 +1,41 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { NSpin, NEmpty, NInput, NButton } from 'naive-ui'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { NSpin, NEmpty, NInput, NButton, NTag, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient, getConnection } from '../rpc/client'
+import { generateUUID } from '../lib/uuid'
 import Markdown from '../components/Markdown.vue'
-import type { Session } from '../rpc/types'
+import type { Session, ChatEntry } from '../rpc/types'
 
 const conn = useConnectionStore()
 const client = getClient()
 const connection = getConnection()
+const message = useMessage()
 
 const sessions = ref<Session[]>([])
 const loading = ref(false)
 const activeKey = ref<string | null>(null)
-const messages = ref<any[]>([])
+const activeSessionId = ref<string | undefined>(undefined)
+const entries = ref<ChatEntry[]>([])
 const input = ref('')
 const sending = ref(false)
+const filter = ref('')
+
+function sessionTitle(s: Session): string {
+  return s.derivedTitle || s.displayName || s.label || s.key
+}
+
+const filteredSessions = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  if (!q) return sessions.value
+  return sessions.value.filter((s) => {
+    const hay = `${sessionTitle(s)} ${s.key} ${s.channel || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
+
+const activeSession = computed(() => sessions.value.find((s) => s.key === activeKey.value))
+const isRunning = computed(() => activeSession.value?.status === 'running')
 
 async function loadSessions() {
   if (!conn.connected) return
@@ -32,15 +52,19 @@ async function loadSessions() {
 
 async function loadHistory(key: string) {
   try {
-    const data = await client.chatHistory(key)
-    messages.value = Array.isArray(data) ? data : data?.messages ?? []
-  } catch (e) {
+    const data = await client.chatHistory({ sessionKey: key, limit: 200 })
+    entries.value = Array.isArray(data) ? data : data?.entries ?? data?.messages ?? []
+    if (data && !Array.isArray(data)) activeSessionId.value = data.sessionId ?? activeSessionId.value
+  } catch (e: any) {
     console.error(e)
+    if (e?.message) message.error(e.message)
   }
 }
 
 async function selectSession(s: Session) {
   activeKey.value = s.key
+  activeSessionId.value = s.sessionId
+  entries.value = []
   await loadHistory(s.key)
 }
 
@@ -49,26 +73,40 @@ async function send() {
   if (!text || !activeKey.value || sending.value) return
   sending.value = true
   input.value = ''
-  messages.value.push({ id: `local-${Date.now()}`, role: 'user', text })
+  entries.value.push({ id: `local-${Date.now()}`, role: 'user', text })
   try {
-    await client.sessionsSend(activeKey.value, text)
+    await client.chatSend({
+      sessionKey: activeKey.value,
+      ...(activeSessionId.value ? { sessionId: activeSessionId.value } : {}),
+      message: text,
+      deliver: false,
+      idempotencyKey: generateUUID(),
+    })
     await loadHistory(activeKey.value)
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
+    if (e?.message) message.error(e.message)
   } finally {
     sending.value = false
   }
 }
 
+// 实时刷新：会话变更 → 刷新列表；消息事件 → 防抖刷新当前转录
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleReload() {
+  if (reloadTimer) clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    if (activeKey.value) loadHistory(activeKey.value)
+  }, 400)
+}
+
 const offSessions = connection.on('sessions.changed', () => loadSessions())
 const offMessage = connection.on('session.message', (p: any) => {
-  if (p && (p.sessionKey === activeKey.value || p.key === activeKey.value)) {
-    loadHistory(activeKey.value)
-  }
+  const k = p?.sessionKey ?? p?.key
+  if (k && k === activeKey.value) scheduleReload()
 })
 
 let stopWatch: (() => void) | null = null
-
 onMounted(() => {
   stopWatch = watch(
     () => conn.status,
@@ -78,11 +116,11 @@ onMounted(() => {
     { immediate: true },
   )
 })
-
 onUnmounted(() => {
   stopWatch?.()
   offSessions()
   offMessage()
+  if (reloadTimer) clearTimeout(reloadTimer)
 })
 </script>
 
@@ -93,19 +131,29 @@ onUnmounted(() => {
         <span>会话</span>
         <n-spin :show="loading" size="small" />
       </div>
+      <div class="sessions-search">
+        <n-input v-model:value="filter" size="small" placeholder="搜索会话…" clearable />
+      </div>
       <div class="sessions-list">
         <div
-          v-for="s in sessions"
+          v-for="s in filteredSessions"
           :key="s.key"
           class="session-item"
           :class="{ active: s.key === activeKey }"
           @click="selectSession(s)"
         >
-          <div class="session-title">{{ s.title || s.key }}</div>
-          <div class="session-sub">{{ s.channel || s.kind || '' }}</div>
+          <div class="session-title-row">
+            <span class="session-title">{{ sessionTitle(s) }}</span>
+            <span v-if="s.status === 'running'" class="running-dot"></span>
+          </div>
+          <div class="session-sub">
+            <span v-if="s.channel" class="session-channel">{{ s.channel }}</span>
+            <span v-else>{{ s.kind }}</span>
+            <span v-if="s.unread" class="unread-dot"></span>
+          </div>
         </div>
         <n-empty
-          v-if="!loading && !sessions.length"
+          v-if="!loading && !filteredSessions.length"
           description="暂无会话"
           style="margin-top: 40px"
         />
@@ -118,15 +166,14 @@ onUnmounted(() => {
       </div>
       <template v-else>
         <div class="messages">
-          <div v-for="m in messages" :key="m.id" class="msg" :class="m.role">
-            <div class="msg-role">
-              {{ m.role === 'user' ? '我' : m.role === 'assistant' ? '助手' : m.role || '消息' }}
-            </div>
+          <div v-for="m in entries" :key="m.id || m.messageId || Math.random()" class="msg" :class="m.role">
+            <div class="msg-role">{{ m.role === 'user' ? '我' : m.role === 'assistant' ? '助手' : m.role || '消息' }}</div>
             <div class="msg-body">
               <Markdown v-if="m.text || m.content" :source="String(m.text || m.content || '')" />
               <pre v-else class="msg-raw">{{ JSON.stringify(m, null, 2) }}</pre>
             </div>
           </div>
+          <div v-if="isRunning" class="typing">正在输入…</div>
         </div>
         <div class="input-bar">
           <n-input
@@ -160,15 +207,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 14px 16px 10px;
   font-weight: 600;
-  border-bottom: 1px solid var(--border);
+}
+
+.sessions-search {
+  padding: 0 12px 10px;
 }
 
 .sessions-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px;
+  padding: 0 6px 6px;
 }
 
 .session-item {
@@ -186,6 +236,13 @@ onUnmounted(() => {
   background: #26262f;
 }
 
+.session-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .session-title {
   font-size: 14px;
   white-space: nowrap;
@@ -197,6 +254,31 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.running-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #63a4ff;
+  animation: pulse 1.2s infinite;
+  flex-shrink: 0;
+}
+
+.unread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e88080;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .main {
@@ -240,12 +322,24 @@ onUnmounted(() => {
   background: #20262e;
 }
 
+.msg.toolResult .msg-body,
+.msg.tool .msg-body {
+  background: #1a1d1a;
+}
+
 .msg-raw {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.typing {
+  max-width: 720px;
+  margin: 0 auto 16px;
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .input-bar {

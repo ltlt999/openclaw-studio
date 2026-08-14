@@ -9,12 +9,25 @@ const client = getClient()
 const models = ref<any[]>([])
 const loading = ref(false)
 
+function extractModels(data: any): any[] {
+  if (Array.isArray(data)) return data
+  if (!data) return []
+  for (const key of ['models', 'entries', 'catalog', 'items', 'choices']) {
+    if (Array.isArray(data[key])) return data[key]
+  }
+  // 可能是 { provider: [...] } 结构，拍平
+  for (const val of Object.values(data)) {
+    if (Array.isArray(val) && val.length && typeof val[0] === 'object') return val
+  }
+  return []
+}
+
 async function load() {
   if (!conn.connected) return
   loading.value = true
   try {
     const data = await client.modelsList()
-    models.value = Array.isArray(data) ? data : data?.models ?? []
+    models.value = extractModels(data)
   } catch (e) {
     console.error(e)
   } finally {
@@ -41,8 +54,8 @@ onMounted(() =>
     <n-spin :show="loading">
       <div v-if="models.length" class="cards">
         <div v-for="(m, i) in models" :key="i" class="card">
-          <div class="card-title">{{ m.name || m.id || m.model }}</div>
-          <div class="card-sub">{{ m.provider || '' }}</div>
+          <div class="card-title">{{ m.name || m.id || m.model || m.slug }}</div>
+          <div class="card-sub">{{ m.provider || m.vendor || '' }}</div>
         </div>
       </div>
       <n-empty v-else-if="!loading" description="暂无模型数据" />

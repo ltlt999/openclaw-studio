@@ -1,8 +1,30 @@
 import type { GatewayConnection } from './connection'
 
+export interface ChatSendParams {
+  sessionKey: string
+  sessionId?: string
+  message: string
+  agentId?: string
+  replyToId?: string
+  expectedLeafEntryId?: string | null
+  expectedRunId?: string
+  queueMode?: string
+  deliver?: boolean
+  idempotencyKey?: string
+  attachments?: any[]
+}
+
+export interface ChatHistoryParams {
+  sessionKey: string
+  agentId?: string
+  limit?: number
+  sessionId?: string
+  maxChars?: number
+}
+
 /**
  * 类型化的 RPC 方法封装。
- * 参数形状基于 OpenClaw Gateway 协议 v4，接入真实 Gateway 后按实际结构校准。
+ * 方法名与参数形状对齐 OpenClaw Gateway 协议 v4（已对照官方 control-ui 源码与 schema）。
  */
 export class GatewayClient {
   constructor(private conn: GatewayConnection) {}
@@ -23,8 +45,11 @@ export class GatewayClient {
   sessionsCreate(params?: Record<string, any>) {
     return this.conn.request('sessions.create', params || {})
   }
-  sessionsSend(key: string, text: string) {
-    return this.conn.request('sessions.send', { key, text })
+  sessionsDelete(key: string) {
+    return this.conn.request('sessions.delete', { key })
+  }
+  sessionsReset(key: string) {
+    return this.conn.request('sessions.reset', { key })
   }
   sessionsAbort(params: Record<string, any>) {
     return this.conn.request('sessions.abort', params)
@@ -37,11 +62,17 @@ export class GatewayClient {
   }
 
   // ---- chat ----
-  chatSend(params: Record<string, any>) {
-    return this.conn.request('chat.send', params)
+  chatSend(params: ChatSendParams) {
+    return this.conn.request('chat.send', params as Record<string, any>)
   }
-  chatHistory(key: string, opts?: Record<string, any>) {
-    return this.conn.request('chat.history', { key, ...opts })
+  chatHistory(params: ChatHistoryParams) {
+    return this.conn.request('chat.history', params as Record<string, any>)
+  }
+  chatMessageGet(params: { sessionKey: string; messageId: string; agentId?: string }) {
+    return this.conn.request('chat.message.get', params)
+  }
+  chatInject(params: Record<string, any>) {
+    return this.conn.request('chat.inject', params)
   }
 
   // ---- models ----
@@ -53,8 +84,8 @@ export class GatewayClient {
   channelsStatus() {
     return this.conn.request('channels.status')
   }
-  channelsLogout(channel: string) {
-    return this.conn.request('channels.logout', { channel })
+  channelsLogout(channel: string, accountId?: string) {
+    return this.conn.request('channels.logout', { channel, accountId })
   }
 
   // ---- agents ----

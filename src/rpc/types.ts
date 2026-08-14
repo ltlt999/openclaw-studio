@@ -57,20 +57,49 @@ export interface ConnectParams {
   device?: Record<string, any>
 }
 
-// 会话 / 消息（字段在接入真实 Gateway 后补全，先放宽）
+// 会话行（对应 gateway-protocol SessionRowSchema）
 export interface Session {
   key: string
-  title?: string
+  sessionId?: string
+  kind?: 'direct' | 'group' | 'global' | 'unknown'
+  label?: string
+  displayName?: string
+  derivedTitle?: string
+  lastMessagePreview?: string
   channel?: string
-  kind?: string
-  status?: string
-  updatedAtMs?: number
+  agentId?: string
+  accountId?: string
+  isMain?: boolean
+  isBackground?: boolean
+  updatedAt?: number | null
+  archived?: boolean
+  pinned?: boolean
+  unread?: boolean
+  lastActivityAt?: number
+  lastInteractionAt?: number
+  status?: 'running' | 'done' | 'failed' | 'killed' | 'timeout'
+  activeLeafEntryId?: string | null
+  parentSessionKey?: string
+  childSessions?: string[]
   [key: string]: any
 }
 
-export interface ChatMessage {
-  id: string
-  role?: 'user' | 'assistant' | 'system' | string
+// 聊天转录条目（字段在接入真实 Gateway 后校准）
+export interface ChatEntry {
+  id?: string
+  messageId?: string
+  role?: string
   text?: string
+  content?: string
   [key: string]: any
 }
+
+export interface ChatHistoryResult {
+  sessionId?: string
+  entries?: ChatEntry[]
+  messages?: ChatEntry[]
+  [key: string]: any
+}
+
+// 会话列表返回：可能是数组，也可能是 { sessions: [...] }
+export type SessionsListResult = Session[] | { sessions?: Session[]; [key: string]: any }
