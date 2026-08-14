@@ -32,6 +32,18 @@ const deviceStateDir = defaultStateDir()
 const device = loadOrCreateDeviceIdentity(deviceStateDir)
 let deviceToken = loadStoredDeviceToken(deviceStateDir)
 
+// 读取配置中的模型供应商（含真实 apiKey，供「获取模型」使用；原生安装可读到）
+const providerConfigs = (() => {
+  try {
+    const p = gatewayCfg?.path
+    if (!p || !fs.existsSync(p)) return null
+    const cfg = JSON.parse(fs.readFileSync(p, 'utf8'))
+    return cfg?.models?.providers ?? null
+  } catch {
+    return null
+  }
+})()
+
 function resolveGateway() {
   const explicit = arg('--gateway', process.env.OPENCLAW_STUDIO_GATEWAY)
   if (explicit) return explicit
@@ -191,9 +203,22 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/fetch-models' && req.method === 'POST') {
     readJsonBody(req)
-      .then(async ({ baseUrl, apiKey, apiType }) => {
-        if (!baseUrl) throw new Error('缺少 baseUrl')
-        const models = await fetchProviderModels({ baseUrl, apiKey, apiType })
+      .then(async ({ baseUrl, apiKey, apiType, providerId }) => {
+        let b = baseUrl
+        let k = apiKey
+        let t = apiType
+        // 编辑供应商时：浏览器不持有真实密钥，若给了 providerId 则用配置里的密钥
+        if (providerId && (!k || k === '__OPENCLAW_REDACTED__')) {
+          const p = providerConfigs?.[providerId]
+          if (p) {
+            b = b || p.baseUrl
+            k = p.apiKey
+            t = t || p.api
+          }
+        }
+        if (!b) throw new Error('缺少 baseUrl')
+        if (!k) throw new Error('缺少 API Key（该供应商密钥不在本机配置中，请手动填写）')
+        const models = await fetchProviderModels({ baseUrl: b, apiKey: k, apiType: t })
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, models }))
       })

@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import {
   NButton, NModal, NForm, NFormItem, NInput, NSelect, NEmpty, NTag,
-  useMessage, NCheckbox, useDialog,
+  useMessage, useDialog,
 } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
@@ -79,8 +79,12 @@ async function setDefault(modelId: string) {
 }
 
 async function fetchModels() {
-  if (!providerForm.value.baseUrl || !providerForm.value.apiKey) {
-    message.warning('请先填写 Base URL 和 API Key')
+  if (!providerForm.value.baseUrl && !editingId.value) {
+    message.warning('请先填写 Base URL')
+    return
+  }
+  if (!providerForm.value.apiKey && !editingId.value) {
+    message.warning('请先填写 API Key（编辑已有供应商时可用已配置的密钥）')
     return
   }
   fetchingModels.value = true
@@ -92,6 +96,7 @@ async function fetchModels() {
         baseUrl: providerForm.value.baseUrl,
         apiKey: providerForm.value.apiKey,
         apiType: providerForm.value.api,
+        providerId: editingId.value || undefined,
       }),
     })
     const data = await res.json()
@@ -119,7 +124,7 @@ function openEdit(id: string) {
     id,
     baseUrl: p.baseUrl || '',
     api: p.api || 'openai-completions',
-    apiKey: p.apiKey || '',
+    apiKey: '', // 密钥不回显，留空表示保持不变
   }
   fetchedModels.value = (p.models || []).map((m: any) => ({ id: m.id, name: m.name || m.id }))
   selectedModels.value = (p.models || []).map((m: any) => m.id)
@@ -151,8 +156,12 @@ function deleteProvider(id: string) {
 async function saveProvider() {
   const id = editingId.value || providerForm.value.id
   const { baseUrl, api, apiKey } = providerForm.value
-  if (!id || !baseUrl || !apiKey) {
-    message.warning('请填写供应商 ID、Base URL 和 API Key')
+  if (!id || !baseUrl) {
+    message.warning('请填写供应商 ID 和 Base URL')
+    return
+  }
+  if (!editingId.value && !apiKey) {
+    message.warning('请填写 API Key')
     return
   }
   if (!editingId.value && !/^[a-z0-9-]+$/.test(id)) {
@@ -167,7 +176,8 @@ async function saveProvider() {
     const models = fetchedModels.value
       .filter((m: any) => selectedModels.value.includes(m.id))
       .map((m: any) => ({ id: m.id, name: m.name || m.id }))
-    const provider: Record<string, any> = { baseUrl, api, apiKey }
+    const provider: Record<string, any> = { baseUrl, api }
+    if (apiKey) provider.apiKey = apiKey // 编辑时留空则保留原密钥
     if (models.length) provider.models = models
     const raw = JSON.stringify({ models: { providers: { [id]: provider } } })
     await client.configPatch(raw, hash)
@@ -272,19 +282,32 @@ onMounted(() =>
         <n-form-item label="Base URL（如 https://api.openai.com/v1）">
           <n-input v-model:value="providerForm.baseUrl" placeholder="https://..." />
         </n-form-item>
-        <n-form-item label="API Key">
-          <n-input v-model:value="providerForm.apiKey" type="password" show-password-on="click" placeholder="sk-..." />
+        <n-form-item :label="editingId ? 'API Key（留空保持不变）' : 'API Key'">
+          <n-input
+            v-model:value="providerForm.apiKey"
+            type="password"
+            show-password-on="click"
+            :placeholder="editingId ? '已配置密钥，留空保持不变' : 'sk-...'"
+          />
         </n-form-item>
         <n-form-item label="模型列表">
           <n-button size="small" :loading="fetchingModels" @click="fetchModels">
             获取模型
           </n-button>
-          <div v-if="fetchedModels.length" class="model-pick">
-            <label v-for="m in fetchedModels" :key="m.id" class="model-option">
-              <n-checkbox :checked="selectedModels.includes(m.id)" @update:checked="() => toggleModel(m.id)" />
-              <span>{{ m.name || m.id }}</span>
-              <span class="model-id">{{ m.id }}</span>
-            </label>
+          <div v-if="fetchedModels.length" class="model-grid">
+            <div
+              v-for="m in fetchedModels"
+              :key="m.id"
+              class="model-chip"
+              :class="{ selected: selectedModels.includes(m.id) }"
+              @click="toggleModel(m.id)"
+            >
+              <span class="model-chip-check">{{ selectedModels.includes(m.id) ? '✓' : '' }}</span>
+              <div class="model-chip-body">
+                <div class="model-chip-name">{{ m.name || m.id }}</div>
+                <div class="model-chip-id">{{ m.id }}</div>
+              </div>
+            </div>
           </div>
         </n-form-item>
         <div class="modal-actions">
@@ -364,22 +387,64 @@ onMounted(() =>
   gap: 6px;
   margin-top: 6px;
 }
-.model-pick {
+.model-grid {
   margin-top: 10px;
-  max-height: 200px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  max-height: 220px;
   overflow-y: auto;
   width: 100%;
 }
-.model-option {
+.model-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 8px 10px;
+  background: #17171c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
 }
-.model-id {
+.model-chip:hover {
+  border-color: #4a4a55;
+}
+.model-chip.selected {
+  border-color: #63a4ff;
+  background: #1a2333;
+}
+.model-chip-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1px solid #4a4a55;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+}
+.model-chip.selected .model-chip-check {
+  background: #63a4ff;
+  border-color: #63a4ff;
+}
+.model-chip-body {
+  min-width: 0;
+}
+.model-chip-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-chip-id {
   font-size: 11px;
   color: #666670;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .modal-actions {
   display: flex;
