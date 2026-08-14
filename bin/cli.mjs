@@ -4,12 +4,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket } from 'ws'
-import {
-  loadGatewayConfig,
-  isLoopbackGateway,
-  injectAuth,
-} from './lib/gateway-config.mjs'
+import { loadGatewayConfig, isLoopbackGateway } from './lib/gateway-config.mjs'
 import { probeGateway } from './lib/self-check.mjs'
+import {
+  loadOrCreateDeviceIdentity,
+  loadStoredDeviceToken,
+  storeDeviceToken,
+  buildConnectDevice,
+  isPairingRequiredError,
+  defaultStateDir,
+} from './lib/device-auth.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
@@ -22,8 +26,11 @@ function arg(name, fallback) {
 const PORT = Number(arg('--port', process.env.OPENCLAW_STUDIO_PORT || '41739'))
 const HOST = arg('--host', process.env.OPENCLAW_STUDIO_HOST || '127.0.0.1')
 
-// ---- 自动读取同机 OpenClaw 配置（token/password/端口）----
+// ---- 读取同机 OpenClaw 配置 + 设备身份 ----
 const gatewayCfg = loadGatewayConfig({ explicitPath: arg('--config') })
+const deviceStateDir = defaultStateDir()
+const device = loadOrCreateDeviceIdentity(deviceStateDir)
+let deviceToken = loadStoredDeviceToken(deviceStateDir)
 
 function resolveGateway() {
   const explicit = arg('--gateway', process.env.OPENCLAW_STUDIO_GATEWAY)
@@ -34,6 +41,7 @@ function resolveGateway() {
 
 const GATEWAY = resolveGateway()
 const GATEWAY_LOOPBACK = isLoopbackGateway(GATEWAY)
+const useDeviceAuth = GATEWAY_LOOPBACK // 仅同机网关自动注入设备认证
 const useAutoAuth = GATEWAY_LOOPBACK && Boolean(gatewayCfg?.token || gatewayCfg?.password)
 
 // 网关要求校验 Origin（control-ui 类客户端），代理连接时带上网关自身 Origin
@@ -48,12 +56,14 @@ function gatewayOrigin(url) {
 const GATEWAY_ORIGIN = gatewayOrigin(GATEWAY)
 
 if (gatewayCfg) console.log(`[openclaw-studio] 已读取 OpenClaw 配置: ${gatewayCfg.path}`)
-if (useAutoAuth) {
-  console.log(`[openclaw-studio] 已自动注入网关鉴权（${gatewayCfg.token ? 'token' : 'password'}）`)
+if (deviceToken) {
+  console.log(`[openclaw-studio] 设备已配对（deviceToken 已保存）: ${device.deviceId.slice(0, 12)}…`)
+} else if (useDeviceAuth && useAutoAuth) {
+  console.log(`[openclaw-studio] 设备待配对: ${device.deviceId.slice(0, 12)}…（首次使用需批准，见下方提示）`)
 } else if (gatewayCfg?.mode === 'none') {
   console.log('[openclaw-studio] gateway.auth.mode=none，无需鉴权')
 } else if (gatewayCfg && !GATEWAY_LOOPBACK) {
-  console.log('[openclaw-studio] 网关为远程地址，未注入本地配置鉴权（如需要请在 UI 设置页填写 token）')
+  console.log('[openclaw-studio] 网关为远程地址，未自动注入本地配置鉴权（如需要请在 UI 设置页填写 token）')
 } else if (!gatewayCfg) {
   console.log('[openclaw-studio] 未找到 OpenClaw 配置（若需鉴权请在 UI 设置页填写 token）')
 }
@@ -109,6 +119,10 @@ const server = http.createServer((req, res) => {
         autoAuth: useAutoAuth ? (gatewayCfg.token ? 'token' : 'password') : gatewayCfg?.mode === 'none' ? 'none' : null,
         configPath: gatewayCfg?.path ?? null,
         probe: probeResult,
+        device: {
+          deviceId: device.deviceId,
+          paired: Boolean(deviceToken),
+        },
       }),
     )
     return
@@ -136,6 +150,36 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws' })
 
+// 构造 connect 帧需要注入的 auth 与 device 字段
+function buildConnectAuthAndDevice(challenge) {
+  const auth = deviceToken
+    ? { deviceToken }
+    : gatewayCfg?.token
+      ? { token: gatewayCfg.token }
+      : gatewayCfg?.password
+        ? { password: gatewayCfg.password }
+        : undefined
+  const signatureToken = deviceToken || gatewayCfg?.token
+  const deviceField = challenge ? buildConnectDevice(device, signatureToken, challenge) : undefined
+  return { auth, deviceField }
+}
+
+function injectConnectAuth(frameStr, challenge) {
+  if (!useDeviceAuth) return frameStr
+  try {
+    const frame = JSON.parse(frameStr)
+    if (frame?.type === 'req' && frame?.method === 'connect') {
+      frame.params = frame.params || {}
+      const { auth, deviceField } = buildConnectAuthAndDevice(challenge)
+      if (auth) frame.params.auth = auth
+      if (deviceField) frame.params.device = deviceField
+    }
+    return JSON.stringify(frame)
+  } catch {
+    return frameStr
+  }
+}
+
 wss.on('connection', (client) => {
   let upstream
   try {
@@ -147,16 +191,44 @@ wss.on('connection', (client) => {
   }
 
   let clientClosed = false
+  let challenge = null // 每个连接捕获一次 connect.challenge
 
   client.on('message', (data) => {
-    if (upstream.readyState === WebSocket.OPEN) upstream.send(injectAuth(data.toString(), gatewayCfg))
+    if (upstream.readyState === WebSocket.OPEN) {
+      upstream.send(injectConnectAuth(data.toString(), challenge))
+    }
   })
   upstream.on('message', (data, isBinary) => {
     if (client.readyState !== WebSocket.OPEN) return
-    // ws 包默认把文本帧按 Buffer 送达，直接转发会变成二进制帧，
-    // 浏览器端收到 Blob 无法解析 JSON，这里统一转成文本帧
+    const text = isBinary ? '' : data.toString()
+    try {
+      const frame = JSON.parse(text)
+      if (frame.type === 'event' && frame.event === 'connect.challenge') {
+        challenge = { nonce: frame.payload?.nonce, ts: frame.payload?.ts }
+      } else if (frame.type === 'res' && frame.id === 'connect') {
+        if (frame.ok) {
+          const newToken = frame.payload?.auth?.deviceToken
+          if (newToken && newToken !== deviceToken) {
+            deviceToken = newToken
+            storeDeviceToken(deviceStateDir, newToken)
+            console.log('[openclaw-studio] 已保存网关颁发的 deviceToken，设备配对成功')
+          }
+        } else if (isPairingRequiredError(frame.error)) {
+          console.error('')
+          console.error('[openclaw-studio] 设备待批准（首次使用需要批准一次）。请执行：')
+          console.error('  1. openclaw devices list          （查看待配对列表，找到本设备对应的 Request ID）')
+          console.error('  2. openclaw devices approve <RequestID>')
+          console.error('  本设备 Device ID: ' + device.deviceId)
+          console.error('  （Docker 安装把 openclaw 换成: docker exec <容器名> openclaw）')
+          console.error('  批准后浏览器会自动重连。')
+          console.error('')
+        }
+      }
+    } catch {
+      // ignore
+    }
     if (isBinary) client.send(data, { binary: true })
-    else client.send(data.toString())
+    else client.send(text)
   })
   upstream.on('error', (err) => {
     console.error(`[openclaw-studio] 无法连接网关 ${GATEWAY}: ${err?.message || err}`)

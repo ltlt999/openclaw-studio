@@ -80,9 +80,19 @@ Start-Process node -ArgumentList "bin/cli.mjs","--host","0.0.0.0","--gateway","w
 
 ### 鉴权
 
-Gateway 默认启用共享密钥鉴权（即使 loopback）。首次打开 UI 时，在 **设置** 页填入 Gateway 的 token 或 password（存于浏览器 localStorage），保存后自动重连。token 见服务器上 OpenClaw 的配置或启动日志。
+新版 OpenClaw 采用**设备认证**：CLI 自动读取同机 OpenClaw 配置与网关 token，生成设备身份并自动连接。
 
-> 架构说明：浏览器只连本 UI 的 `/ws`（同源），由 CLI 代理转发到 Gateway，因此无跨域问题；Gateway 地址是服务端配置项，换机器无需改前端。
+**首次使用**只需在服务器上批准一次设备（CLI 启动日志会给出确切提示）：
+
+```bash
+openclaw devices list            # 找到本设备的 Request ID
+openclaw devices approve <RequestID>
+# Docker 安装: docker exec <容器名> openclaw devices approve <RequestID>
+```
+
+批准后 CLI 会保存网关颁发的 deviceToken，之后每次启动自动连接，无需再操作。
+
+> 架构说明：浏览器只连本 UI 的 `/ws`（同源），由 CLI 代理转发到 Gateway 并完成设备认证/鉴权注入，因此无跨域问题；token 与设备密钥只在服务器端，浏览器不接触。Gateway 地址是服务端配置项，换机器无需改前端。
 
 ## 常见问题（FAQ）
 

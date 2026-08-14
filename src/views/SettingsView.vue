@@ -12,6 +12,7 @@ const saving = ref(false)
 
 const autoStatus = ref<string>('')
 const probeStatus = ref<string>('')
+const deviceStatus = ref<string>('')
 const gateway = ref('')
 
 onMounted(async () => {
@@ -25,6 +26,11 @@ onMounted(async () => {
       autoStatus.value = '服务器网关未启用鉴权（auth.mode=none），无需填写'
     } else {
       autoStatus.value = '未检测到可自动读取的网关鉴权；若下方填写凭证则优先使用手动凭证'
+    }
+    if (data.device) {
+      deviceStatus.value = data.device.paired
+        ? `设备已配对（${data.device.deviceId.slice(0, 12)}…），可自动获得完整权限`
+        : `设备未配对（${data.device.deviceId.slice(0, 12)}…）。首次使用需在服务器上执行 openclaw devices list + approve 批准`
     }
     if (data.probe) {
       probeStatus.value = data.probe.ok
@@ -61,6 +67,14 @@ function save() {
       style="margin-bottom: 12px"
     >
       {{ autoStatus || '正在检测服务器上的 OpenClaw 配置…' }}
+    </n-alert>
+    <n-alert
+      v-if="deviceStatus"
+      :type="deviceStatus.startsWith('设备已配对') ? 'success' : 'warning'"
+      :bordered="false"
+      style="margin-bottom: 12px"
+    >
+      {{ deviceStatus }}
     </n-alert>
     <n-alert
       v-if="probeStatus"

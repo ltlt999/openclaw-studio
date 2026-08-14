@@ -135,7 +135,7 @@ export class GatewayConnection {
         maxProtocol: PROTOCOL,
         client: { id: CLIENT_ID, version: CLIENT_VERSION, platform: 'web', mode: CLIENT_MODE },
         role: 'operator',
-        scopes: ['operator.read', 'operator.write'],
+        scopes: ['operator.read', 'operator.write', 'operator.talk'],
       }
       if (this.token) params.auth = { token: this.token }
       else if (this.password) params.auth = { password: this.password }

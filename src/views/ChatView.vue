@@ -91,6 +91,33 @@ async function send() {
   }
 }
 
+function roleLabel(m: any): string {
+  if (m.role === 'user') return '我'
+  if (m.role === 'assistant') return '助手'
+  return m.role || '消息'
+}
+
+// 提取消息显示文本：兼容字符串与块数组（助手流式 content）
+function messageText(m: any): string {
+  if (typeof m.text === 'string') return m.text
+  const c = m.content
+  if (typeof c === 'string') return c
+  if (Array.isArray(c)) {
+    return c
+      .map((b: any) => (typeof b === 'string' ? b : b?.type === 'text' ? b.text ?? '' : ''))
+      .filter((s: string) => s)
+      .join('\n')
+  }
+  return ''
+}
+
+// 提取工具调用块
+function messageTools(m: any): any[] {
+  const c = m.content
+  if (!Array.isArray(c)) return []
+  return c.filter((b: any) => b && typeof b === 'object' && (b.type === 'tool_call' || b.type === 'toolCall' || b.name))
+}
+
 // 实时刷新：会话变更 → 刷新列表；消息事件 → 防抖刷新当前转录
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleReload() {
@@ -167,10 +194,16 @@ onUnmounted(() => {
       <template v-else>
         <div class="messages">
           <div v-for="m in entries" :key="m.id || m.messageId || Math.random()" class="msg" :class="m.role">
-            <div class="msg-role">{{ m.role === 'user' ? '我' : m.role === 'assistant' ? '助手' : m.role || '消息' }}</div>
+            <div class="msg-role">{{ roleLabel(m) }}</div>
             <div class="msg-body">
-              <Markdown v-if="m.text || m.content" :source="String(m.text || m.content || '')" />
-              <pre v-else class="msg-raw">{{ JSON.stringify(m, null, 2) }}</pre>
+              <Markdown v-if="messageText(m)" :source="messageText(m)" />
+              <div v-for="(t, ti) in messageTools(m)" :key="ti" class="tool-call">
+                <span class="tool-name">工具调用: {{ t.name || t.id || 'tool' }}</span>
+                <pre v-if="t.input || t.arguments" class="tool-args">{{
+                  typeof (t.input || t.arguments) === 'string' ? (t.input || t.arguments) : JSON.stringify(t.input || t.arguments, null, 2)
+                }}</pre>
+              </div>
+              <pre v-if="!messageText(m) && !messageTools(m).length" class="msg-raw">{{ JSON.stringify(m, null, 2) }}</pre>
             </div>
           </div>
           <div v-if="isRunning" class="typing">正在输入…</div>
@@ -325,6 +358,29 @@ onUnmounted(() => {
 .msg.toolResult .msg-body,
 .msg.tool .msg-body {
   background: #1a1d1a;
+}
+
+.tool-call {
+  margin-top: 8px;
+  border: 1px solid #33333c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #17171c;
+}
+
+.tool-name {
+  font-size: 12px;
+  color: #7aa2f7;
+  font-weight: 600;
+}
+
+.tool-args {
+  margin: 6px 0 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
 }
 
 .msg-raw {
