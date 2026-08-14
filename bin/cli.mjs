@@ -23,7 +23,7 @@ const PORT = Number(arg('--port', process.env.OPENCLAW_STUDIO_PORT || '41739'))
 const HOST = arg('--host', process.env.OPENCLAW_STUDIO_HOST || '127.0.0.1')
 
 // ---- 自动读取同机 OpenClaw 配置（token/password/端口）----
-const gatewayCfg = loadGatewayConfig()
+const gatewayCfg = loadGatewayConfig({ explicitPath: arg('--config') })
 
 function resolveGateway() {
   const explicit = arg('--gateway', process.env.OPENCLAW_STUDIO_GATEWAY)
@@ -35,6 +35,17 @@ function resolveGateway() {
 const GATEWAY = resolveGateway()
 const GATEWAY_LOOPBACK = isLoopbackGateway(GATEWAY)
 const useAutoAuth = GATEWAY_LOOPBACK && Boolean(gatewayCfg?.token || gatewayCfg?.password)
+
+// 网关要求校验 Origin（control-ui 类客户端），代理连接时带上网关自身 Origin
+function gatewayOrigin(url) {
+  try {
+    const u = new URL(url)
+    return `${u.protocol === 'wss:' ? 'https:' : 'http:'}//${u.host}`
+  } catch {
+    return 'http://127.0.0.1:18789'
+  }
+}
+const GATEWAY_ORIGIN = gatewayOrigin(GATEWAY)
 
 if (gatewayCfg) console.log(`[openclaw-studio] 已读取 OpenClaw 配置: ${gatewayCfg.path}`)
 if (useAutoAuth) {
@@ -49,7 +60,7 @@ if (useAutoAuth) {
 
 // ---- 启动自检：网关连通性 + 鉴权 ----
 let probeResult = null
-probeGateway({ url: GATEWAY, auth: useAutoAuth ? gatewayCfg : null }).then((r) => {
+probeGateway({ url: GATEWAY, auth: useAutoAuth ? gatewayCfg : null, origin: GATEWAY_ORIGIN }).then((r) => {
   probeResult = r
   console.log(`[openclaw-studio] 网关自检: ${r.ok ? '通过' : '失败'} - ${r.message}`)
 })
@@ -128,7 +139,7 @@ const wss = new WebSocketServer({ server, path: '/ws' })
 wss.on('connection', (client) => {
   let upstream
   try {
-    upstream = new WebSocket(GATEWAY)
+    upstream = new WebSocket(GATEWAY, { origin: GATEWAY_ORIGIN })
   } catch (err) {
     console.error(`[openclaw-studio] 无法创建网关连接: ${err?.message || err}`)
     client.close(1011, 'gateway connect failed')
@@ -140,8 +151,12 @@ wss.on('connection', (client) => {
   client.on('message', (data) => {
     if (upstream.readyState === WebSocket.OPEN) upstream.send(injectAuth(data.toString(), gatewayCfg))
   })
-  upstream.on('message', (data) => {
-    if (client.readyState === WebSocket.OPEN) client.send(data)
+  upstream.on('message', (data, isBinary) => {
+    if (client.readyState !== WebSocket.OPEN) return
+    // ws 包默认把文本帧按 Buffer 送达，直接转发会变成二进制帧，
+    // 浏览器端收到 Blob 无法解析 JSON，这里统一转成文本帧
+    if (isBinary) client.send(data, { binary: true })
+    else client.send(data.toString())
   })
   upstream.on('error', (err) => {
     console.error(`[openclaw-studio] 无法连接网关 ${GATEWAY}: ${err?.message || err}`)

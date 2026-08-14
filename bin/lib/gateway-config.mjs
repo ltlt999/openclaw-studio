@@ -45,7 +45,8 @@ export function injectAuth(frameStr, auth) {
   }
 }
 
-export function candidateConfigPaths() {
+export function candidateConfigPaths({ explicit } = {}) {
+  if (explicit) return [explicit]
   const home = process.env.OPENCLAW_HOME?.trim() || os.homedir()
   const stateOverride = process.env.OPENCLAW_STATE_DIR?.trim()
   return [
@@ -56,8 +57,8 @@ export function candidateConfigPaths() {
   ].filter(Boolean)
 }
 
-export function loadGatewayConfig() {
-  for (const p of candidateConfigPaths()) {
+export function loadGatewayConfig({ explicitPath } = {}) {
+  for (const p of candidateConfigPaths({ explicit: explicitPath })) {
     try {
       if (!fs.existsSync(p)) continue
       const parsed = JSON.parse(fs.readFileSync(p, 'utf8'))

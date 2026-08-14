@@ -2,7 +2,7 @@
 import { WebSocket } from 'ws'
 import { injectAuth } from './gateway-config.mjs'
 
-export function probeGateway({ url, auth, timeoutMs = 5000 }) {
+export function probeGateway({ url, auth, origin, timeoutMs = 5000 }) {
   return new Promise((resolve) => {
     let ws
     let done = false
@@ -30,7 +30,7 @@ export function probeGateway({ url, auth, timeoutMs = 5000 }) {
             params: {
               minProtocol: 4,
               maxProtocol: 4,
-              client: { id: 'openclaw-studio', version: '0.1.0', platform: 'node', mode: 'operator' },
+              client: { id: 'webchat-ui', version: '0.1.0', platform: 'node', mode: 'webchat' },
               role: 'operator',
               scopes: ['operator.read', 'operator.write'],
             },
@@ -44,7 +44,7 @@ export function probeGateway({ url, auth, timeoutMs = 5000 }) {
     }
 
     try {
-      ws = new WebSocket(url)
+      ws = new WebSocket(url, origin ? { origin } : undefined)
     } catch (e) {
       finish({ ok: false, kind: 'unreachable', message: `无法建立连接: ${e.message}` })
       return

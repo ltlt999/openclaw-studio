@@ -24,8 +24,9 @@ interface Queued {
   pending: Pending
 }
 
-const CLIENT_ID = 'openclaw-studio'
+const CLIENT_ID = 'webchat-ui'
 const CLIENT_VERSION = '0.1.0'
+const CLIENT_MODE = 'webchat'
 const PROTOCOL = 4
 
 export function defaultWsUrl(): string {
@@ -132,7 +133,7 @@ export class GatewayConnection {
       const params: Record<string, any> = {
         minProtocol: PROTOCOL,
         maxProtocol: PROTOCOL,
-        client: { id: CLIENT_ID, version: CLIENT_VERSION, platform: 'web', mode: 'operator' },
+        client: { id: CLIENT_ID, version: CLIENT_VERSION, platform: 'web', mode: CLIENT_MODE },
         role: 'operator',
         scopes: ['operator.read', 'operator.write'],
       }
