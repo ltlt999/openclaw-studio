@@ -144,7 +144,7 @@ OpenClaw 是一个多通道 AI Agent 网关（Gateway），官方自带的 Contr
 ## 10. 目录结构
 
 ```
-openclaw-web-ui/                # 项目根 = E:\web\2026-8-14
+openclaw-studio/                # 项目根 = E:\web\2026-8-14
   bin/
     cli.mjs                     # CLI 入口：静态服务 + ws 代理
   src/
@@ -184,9 +184,9 @@ openclaw-web-ui/                # 项目根 = E:\web\2026-8-14
 
 发布为 npm 包后，在**任何装了 OpenClaw（即有 Node ≥22）的机器**上：
 
-- 安装：`npm install -g openclaw-web-ui`
-- 运行：`openclaw-web-ui`（默认端口 41739，自动打开/打印 URL）
-- 零安装运行（可选）：`npx openclaw-web-ui`
+- 安装：`npm install -g openclaw-studio`
+- 运行：`openclaw-studio`（默认端口 41739，自动打开/打印 URL）
+- 零安装运行（可选）：`npx openclaw-studio`
 
 CLI 参数：
 
@@ -197,7 +197,7 @@ CLI 参数：
 ### 11.4 发布到 GitHub + npm
 
 - `git init` → 推送到 GitHub 仓库（仓库名/账号待确认）。
-- `package.json` 配置：`name`（npm 包名）、`version`、`bin`（`openclaw-web-ui` → `bin/cli.mjs`）、`files: ["dist", "bin"]`（只发布构建产物 + CLI，不发布 `src`）、`prepublishOnly: "npm run build"`、运行时依赖仅 `ws`。
+- `package.json` 配置：`name`（npm 包名）、`version`、`bin`（`openclaw-studio` → `bin/cli.mjs`）、`files: ["dist", "bin"]`（只发布构建产物 + CLI，不发布 `src`）、`prepublishOnly: "npm run build"`、运行时依赖仅 `ws`。
 - 发布流程：`npm publish`（或 GitHub Actions 在打 tag 时自动构建并发布）。
 
 ## 12. 非目标与未来扩展
@@ -211,4 +211,4 @@ CLI 参数：
 2. Gateway auth 模式（token / password / none）及 token 获取方式。
 3. `models.list` / `agents.list` / `channels.status` / `sessions.usage*` 实际返回结构，用于补全 `types.ts`。
 4. 端口 41739 是否被占用（如被占用则更换）。
-5. npm 包名可用性（`openclaw-web-ui` 若被占用，改用 scoped 包名）；GitHub 仓库名与账号。
+5. npm 包名可用性（`openclaw-studio` 若被占用，改用 scoped 包名）；GitHub 仓库名与账号。
