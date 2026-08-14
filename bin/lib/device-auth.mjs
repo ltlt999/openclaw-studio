@@ -13,7 +13,7 @@ import {
 export const CLIENT_ID = 'webchat-ui'
 export const CLIENT_MODE = 'webchat'
 export const CLIENT_VERSION = '0.1.0'
-export const DEFAULT_SCOPES = ['operator.read', 'operator.write', 'operator.talk']
+export const DEFAULT_SCOPES = ['operator.read', 'operator.write', 'operator.talk', 'operator.admin']
 
 export function defaultStateDir() {
   return path.join(os.homedir(), '.openclaw-studio')

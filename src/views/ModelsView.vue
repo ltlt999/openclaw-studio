@@ -1,25 +1,24 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { NSpin, NEmpty } from 'naive-ui'
+import { NButton, NEmpty, NTag, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
 
 const conn = useConnectionStore()
 const client = getClient()
-const models = ref<any[]>([])
-const loading = ref(false)
+const message = useMessage()
 
-function extractModels(data: any): any[] {
-  if (Array.isArray(data)) return data
-  if (!data) return []
-  for (const key of ['models', 'entries', 'catalog', 'items', 'choices']) {
-    if (Array.isArray(data[key])) return data[key]
-  }
-  // 可能是 { provider: [...] } 结构，拍平
-  for (const val of Object.values(data)) {
-    if (Array.isArray(val) && val.length && typeof val[0] === 'object') return val
-  }
-  return []
+const models = ref<any[]>([])
+const currentModel = ref<string>('')
+const loading = ref(false)
+const switching = ref(false)
+
+function fullName(m: any): string {
+  return m?.provider && m?.id ? `${m.provider}/${m.id}` : m?.id || m?.name || ''
+}
+
+function isCurrent(m: any): boolean {
+  return fullName(m) === currentModel.value || m?.id === currentModel.value
 }
 
 async function load() {
@@ -27,11 +26,35 @@ async function load() {
   loading.value = true
   try {
     const data = await client.modelsList()
-    models.value = extractModels(data)
-  } catch (e) {
-    console.error(e)
+    models.value = Array.isArray(data) ? data : data?.models ?? []
+    try {
+      const cfg = await client.configGet()
+      currentModel.value = cfg?.resolved?.agents?.defaults?.model?.primary ?? ''
+    } catch (e) {
+      console.error(e)
+    }
+  } catch (e: any) {
+    if (e?.message) message.error(e.message)
   } finally {
     loading.value = false
+  }
+}
+
+async function setDefault(modelId: string) {
+  if (switching.value) return
+  switching.value = true
+  try {
+    const cfg = await client.configGet()
+    const hash = cfg?.hash
+    if (!hash) throw new Error('无法获取配置版本')
+    const patch = JSON.stringify({ agents: { defaults: { model: { primary: modelId } } } })
+    await client.configPatch(patch, hash)
+    currentModel.value = modelId
+    message.success(`已切换默认模型：${modelId}`)
+  } catch (e: any) {
+    message.error(e?.message || '切换失败')
+  } finally {
+    switching.value = false
   }
 }
 
@@ -50,16 +73,36 @@ onMounted(() =>
   <div class="page">
     <div class="page-head">
       <h2>模型</h2>
+      <span v-if="currentModel" class="current">
+        当前默认：<b>{{ currentModel }}</b>
+      </span>
     </div>
-    <n-spin :show="loading">
-      <div v-if="models.length" class="cards">
-        <div v-for="(m, i) in models" :key="i" class="card">
-          <div class="card-title">{{ m.name || m.id || m.model || m.slug }}</div>
-          <div class="card-sub">{{ m.provider || m.vendor || '' }}</div>
+
+    <div v-if="models.length" class="cards">
+      <div
+        v-for="(m, i) in models"
+        :key="i"
+        class="card"
+        :class="{ active: isCurrent(m) }"
+      >
+        <div class="card-top">
+          <span class="card-title">{{ m.name || m.id }}</span>
+          <n-tag v-if="isCurrent(m)" type="success" size="small" round>当前</n-tag>
         </div>
+        <div class="card-sub">{{ m.provider }} · {{ m.id }}</div>
+        <n-button
+          v-if="!isCurrent(m)"
+          size="small"
+          type="primary"
+          quaternary
+          :loading="switching"
+          @click="setDefault(fullName(m))"
+        >
+          设为默认
+        </n-button>
       </div>
-      <n-empty v-else-if="!loading" description="暂无模型数据" />
-    </n-spin>
+    </div>
+    <n-empty v-else-if="!loading" description="暂无模型数据" />
   </div>
 </template>
 
@@ -69,13 +112,26 @@ onMounted(() =>
   height: 100%;
   overflow-y: auto;
 }
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 16px;
+}
 .page-head h2 {
-  margin: 0 0 16px;
+  margin: 0;
   font-size: 18px;
+}
+.current {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.current b {
+  color: #63a4ff;
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
 }
 .card {
@@ -83,6 +139,16 @@ onMounted(() =>
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
+  transition: border-color 0.2s;
+}
+.card.active {
+  border-color: #63a4ff;
+}
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .card-title {
   font-weight: 600;
@@ -90,6 +156,6 @@ onMounted(() =>
 .card-sub {
   font-size: 12px;
   color: var(--text-dim);
-  margin-top: 4px;
+  margin: 6px 0 10px;
 }
 </style>

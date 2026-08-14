@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
-import { NSpin, NEmpty, NInput, NButton, NTag, useMessage } from 'naive-ui'
+import { NEmpty, NInput, NButton, NTag, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient, getConnection } from '../rpc/client'
 import { generateUUID } from '../lib/uuid'
@@ -156,7 +156,7 @@ onUnmounted(() => {
     <div class="sessions">
       <div class="sessions-head">
         <span>会话</span>
-        <n-spin :show="loading" size="small" />
+        <span v-if="loading" class="head-spinner"></span>
       </div>
       <div class="sessions-search">
         <n-input v-model:value="filter" size="small" placeholder="搜索会话…" clearable />
@@ -242,6 +242,22 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 14px 16px 10px;
   font-weight: 600;
+}
+
+.head-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #63a4ff;
+  border-radius: 50%;
+  animation: head-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes head-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sessions-search {

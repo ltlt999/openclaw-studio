@@ -10,6 +10,7 @@ import {
   buildConnectDevice,
   isPairingRequiredError,
   defaultStateDir,
+  DEFAULT_SCOPES,
 } from '../../bin/lib/device-auth.mjs'
 
 function tmpStateDir() {
@@ -46,7 +47,7 @@ describe('device-auth', () => {
     // 验证签名：用公钥验证 payload 的 v3 签名
     const payload = [
       'v3', dev.deviceId, 'webchat-ui', 'webchat', 'operator',
-      'operator.read,operator.write,operator.talk', '123456', 'tok', 'n', 'web', '',
+      DEFAULT_SCOPES.join(','), '123456', 'tok', 'n', 'web', '',
     ].join('|')
     const publicKey = createPublicKey(dev.publicKeyPem)
     const valid = verify(null, Buffer.from(payload), publicKey, Buffer.from(sig, 'base64url'))

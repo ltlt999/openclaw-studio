@@ -38,10 +38,12 @@ export function defaultWsUrl(): string {
 }
 
 function extractError(frame: any): string {
-  const code = typeof frame?.code === 'string' ? frame.code : ''
-  const detailCode = typeof frame?.details?.code === 'string' ? frame.details.code : ''
-  const reason = typeof frame?.details?.reason === 'string' ? frame.details.reason : ''
-  const message = typeof frame?.message === 'string' ? frame.message : ''
+  // 网关把错误放在 error 对象里：{ ok:false, error:{ code, message, details } }
+  const e = frame?.error
+  const code = typeof e?.code === 'string' ? e.code : typeof frame?.code === 'string' ? frame.code : ''
+  const detailCode = typeof e?.details?.code === 'string' ? e.details.code : typeof frame?.details?.code === 'string' ? frame.details.code : ''
+  const reason = typeof e?.details?.reason === 'string' ? e.details.reason : typeof frame?.details?.reason === 'string' ? frame.details.reason : ''
+  const message = typeof e?.message === 'string' ? e.message : typeof frame?.message === 'string' ? frame.message : ''
   const parts = [code, detailCode, reason, message].filter(Boolean)
   return parts.join(' · ') || '连接失败'
 }
@@ -135,7 +137,7 @@ export class GatewayConnection {
         maxProtocol: PROTOCOL,
         client: { id: CLIENT_ID, version: CLIENT_VERSION, platform: 'web', mode: CLIENT_MODE },
         role: 'operator',
-        scopes: ['operator.read', 'operator.write', 'operator.talk'],
+        scopes: ['operator.read', 'operator.write', 'operator.talk', 'operator.admin'],
       }
       if (this.token) params.auth = { token: this.token }
       else if (this.password) params.auth = { password: this.password }

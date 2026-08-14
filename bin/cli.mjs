@@ -68,9 +68,34 @@ if (deviceToken) {
   console.log('[openclaw-studio] 未找到 OpenClaw 配置（若需鉴权请在 UI 设置页填写 token）')
 }
 
-// ---- 启动自检：网关连通性 + 鉴权 ----
+// 构造 connect 帧需要注入的 auth 与 device 字段
+// 优先用配置里的网关 token（稳定不轮换）；deviceToken 仅作兜底（无配置 token 时）
+function buildConnectAuthAndDevice(challenge) {
+  const auth = gatewayCfg?.token
+    ? { token: gatewayCfg.token }
+    : gatewayCfg?.password
+      ? { password: gatewayCfg.password }
+      : deviceToken
+        ? { deviceToken }
+        : undefined
+  const signatureToken = gatewayCfg?.token || deviceToken
+  const deviceField = challenge ? buildConnectDevice(device, signatureToken, challenge) : undefined
+  return { auth, deviceField }
+}
+
+// ---- 启动自检：网关连通性 + 鉴权（走与真实连接一致的设备认证）----
 let probeResult = null
-probeGateway({ url: GATEWAY, auth: useAutoAuth ? gatewayCfg : null, origin: GATEWAY_ORIGIN }).then((r) => {
+probeGateway({
+  url: GATEWAY,
+  origin: GATEWAY_ORIGIN,
+  enrich: (params, challenge) => {
+    if (!useDeviceAuth) return params
+    const { auth, deviceField } = buildConnectAuthAndDevice(challenge)
+    if (auth) params.auth = auth
+    if (deviceField) params.device = deviceField
+    return params
+  },
+}).then((r) => {
   probeResult = r
   console.log(`[openclaw-studio] 网关自检: ${r.ok ? '通过' : '失败'} - ${r.message}`)
 })
@@ -149,20 +174,6 @@ const server = http.createServer((req, res) => {
 })
 
 const wss = new WebSocketServer({ server, path: '/ws' })
-
-// 构造 connect 帧需要注入的 auth 与 device 字段
-function buildConnectAuthAndDevice(challenge) {
-  const auth = deviceToken
-    ? { deviceToken }
-    : gatewayCfg?.token
-      ? { token: gatewayCfg.token }
-      : gatewayCfg?.password
-        ? { password: gatewayCfg.password }
-        : undefined
-  const signatureToken = deviceToken || gatewayCfg?.token
-  const deviceField = challenge ? buildConnectDevice(device, signatureToken, challenge) : undefined
-  return { auth, deviceField }
-}
 
 function injectConnectAuth(frameStr, challenge) {
   if (!useDeviceAuth) return frameStr
