@@ -149,6 +149,16 @@ async function openEdit(id: string) {
   showAdd.value = true
 }
 
+// 网关写保护：新配置 < 上次成功配置的 50% 会拒绝（防误删大段配置）。
+// 删除大体积供应商（模型多）时会触发。
+async function tryDeleteProvider(id: string) {
+  const cfg = await client.configGet()
+  const hash = cfg?.hash
+  if (!hash) throw new Error('无法获取配置版本')
+  const raw = JSON.stringify({ models: { providers: { [id]: null } } })
+  await client.configPatch(raw, hash, [`models.providers.${id}.models`])
+}
+
 function deleteProvider(id: string) {
   dialog.warning({
     title: '删除供应商',
@@ -157,16 +167,18 @@ function deleteProvider(id: string) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        const cfg = await client.configGet()
-        const hash = cfg?.hash
-        if (!hash) throw new Error('无法获取配置版本')
-        // 用 config.patch 局部删除，避免整包替换触发网关校验（如 size-drop / 丢失派生字段）
-        const raw = JSON.stringify({ models: { providers: { [id]: null } } })
-        await client.configPatch(raw, hash, [`models.providers.${id}.models`])
+        await tryDeleteProvider(id)
         message.success(`已删除供应商 ${id}`)
         await load()
       } catch (e: any) {
-        message.error(e?.message || '删除失败')
+        if (/size-drop|CONFIG_WRITE_REJECTED/i.test(e?.message || '')) {
+          message.error(
+            `网关写保护拒绝了删除「${id}」（该供应商体积较大，配置降幅超 50%）。请在服务器上手动编辑配置文件，删除 models.providers.${id} 后重启网关。`,
+            { duration: 8000 },
+          )
+        } else {
+          message.error(e?.message || '删除失败')
+        }
       }
     },
   })
