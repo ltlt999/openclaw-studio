@@ -71,11 +71,29 @@ async function loadHistory(key: string) {
   }
 }
 
+let subscribedKey: string | null = null
+
 async function selectSession(s: Session) {
+  // 取消订阅旧会话的消息事件，避免堆积
+  if (subscribedKey && subscribedKey !== s.key) {
+    try {
+      await client.sessionsMessagesUnsubscribe(subscribedKey)
+    } catch {
+      // ignore
+    }
+    subscribedKey = null
+  }
   activeKey.value = s.key
   activeSessionId.value = s.sessionId
   entries.value = []
   await loadHistory(s.key)
+  // 订阅新会话消息事件，实现实时更新
+  try {
+    await client.sessionsMessagesSubscribe(s.key)
+    subscribedKey = s.key
+  } catch (e) {
+    console.error('订阅消息失败', e)
+  }
 }
 
 const creating = ref(false)
@@ -274,6 +292,14 @@ onUnmounted(() => {
   offSessions()
   offMessage()
   if (reloadTimer) clearTimeout(reloadTimer)
+  if (subscribedKey) {
+    try {
+      client.sessionsMessagesUnsubscribe(subscribedKey)
+    } catch {
+      // ignore
+    }
+    subscribedKey = null
+  }
 })
 </script>
 
