@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
-import { NEmpty, NInput, NButton, NTag, useMessage } from 'naive-ui'
+import { NEmpty, NInput, NButton, NTag, NModal, NFormItem, NForm, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient, getConnection } from '../rpc/client'
 import { generateUUID } from '../lib/uuid'
@@ -66,6 +66,43 @@ async function selectSession(s: Session) {
   activeSessionId.value = s.sessionId
   entries.value = []
   await loadHistory(s.key)
+}
+
+const creating = ref(false)
+async function newSession() {
+  if (!conn.connected || creating.value) return
+  creating.value = true
+  try {
+    const s = await client.sessionsCreate({})
+    const key = s?.key || s?.session?.key
+    if (!key) throw new Error('创建失败')
+    await loadSessions()
+    const created = sessions.value.find((x) => x.key === key)
+    if (created) await selectSession(created)
+  } catch (e: any) {
+    message.error(e?.message || '创建会话失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+const showRename = ref(false)
+const renameTitle = ref('')
+function openRename() {
+  if (!activeKey.value || !activeSession.value) return
+  renameTitle.value = sessionTitle(activeSession.value)
+  showRename.value = true
+}
+async function confirmRename() {
+  if (!activeKey.value || !renameTitle.value.trim()) return
+  try {
+    await client.sessionsPatch({ key: activeKey.value, label: renameTitle.value.trim() })
+    message.success('已重命名')
+    showRename.value = false
+    await loadSessions()
+  } catch (e: any) {
+    message.error(e?.message || '重命名失败')
+  }
 }
 
 async function send() {
@@ -209,7 +246,10 @@ onUnmounted(() => {
     <div class="sessions">
       <div class="sessions-head">
         <span>会话</span>
-        <span v-if="loading" class="head-spinner"></span>
+        <div class="sessions-head-actions">
+          <span v-if="loading" class="head-spinner"></span>
+          <n-button size="tiny" type="primary" quaternary :loading="creating" @click="newSession">新建</n-button>
+        </div>
       </div>
       <div class="sessions-search">
         <n-input v-model:value="filter" size="small" placeholder="搜索会话…" clearable />
@@ -245,6 +285,10 @@ onUnmounted(() => {
         <n-empty description="选择一个会话开始" />
       </div>
       <template v-else>
+        <div class="chat-header">
+          <span class="chat-header-title">{{ sessionTitle(activeSession) }}</span>
+          <n-button size="tiny" quaternary @click="openRename">重命名</n-button>
+        </div>
         <div class="messages">
           <div v-for="m in entries" :key="msgKey(m)" class="msg" :class="m.role">
             <div class="msg-role">
@@ -290,6 +334,18 @@ onUnmounted(() => {
         </div>
       </template>
     </div>
+
+    <n-modal v-model:show="showRename" preset="card" style="width: 420px" title="重命名会话">
+      <n-form>
+        <n-form-item label="会话标题">
+          <n-input v-model:value="renameTitle" placeholder="输入新标题" @keyup.enter="confirmRename" />
+        </n-form-item>
+      </n-form>
+      <div style="display: flex; justify-content: flex-end; gap: 10px">
+        <n-button @click="showRename = false">取消</n-button>
+        <n-button type="primary" @click="confirmRename">保存</n-button>
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -313,6 +369,30 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 14px 16px 10px;
   font-weight: 600;
+}
+
+.sessions-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-header-title {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .head-spinner {

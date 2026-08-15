@@ -24,9 +24,9 @@ interface Queued {
   pending: Pending
 }
 
-const CLIENT_ID = 'webchat-ui'
+const CLIENT_ID = 'openclaw-control-ui'
 const CLIENT_VERSION = '0.1.0'
-const CLIENT_MODE = 'webchat'
+const CLIENT_MODE = 'ui'
 const PROTOCOL = 4
 
 export function defaultWsUrl(): string {

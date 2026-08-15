@@ -11,6 +11,8 @@ import {
   isPairingRequiredError,
   defaultStateDir,
   DEFAULT_SCOPES,
+  CLIENT_ID,
+  CLIENT_MODE,
 } from '../../bin/lib/device-auth.mjs'
 
 function tmpStateDir() {
@@ -46,7 +48,7 @@ describe('device-auth', () => {
     })
     // 验证签名：用公钥验证 payload 的 v3 签名
     const payload = [
-      'v3', dev.deviceId, 'webchat-ui', 'webchat', 'operator',
+      'v3', dev.deviceId, CLIENT_ID, CLIENT_MODE, 'operator',
       DEFAULT_SCOPES.join(','), '123456', 'tok', 'n', 'web', '',
     ].join('|')
     const publicKey = createPublicKey(dev.publicKeyPem)

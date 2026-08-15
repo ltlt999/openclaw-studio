@@ -39,6 +39,12 @@ export class GatewayClient {
   sessionsDescribe(key: string) {
     return this.conn.request('sessions.describe', { key })
   }
+  sessionsCreate(params?: Record<string, any>) {
+    return this.conn.request('sessions.create', params)
+  }
+  sessionsPatch(params: Record<string, any>) {
+    return this.conn.request('sessions.patch', params)
+  }
   sessionsResolve(key: string) {
     return this.conn.request('sessions.resolve', { key })
   }

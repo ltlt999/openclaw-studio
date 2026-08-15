@@ -39,7 +39,7 @@ export function probeGateway({ url, origin, enrich, timeoutMs = 5000 }) {
         const params = {
           minProtocol: 4,
           maxProtocol: 4,
-          client: { id: 'webchat-ui', version: '0.1.0', platform: 'web', mode: 'webchat' },
+          client: { id: 'openclaw-control-ui', version: '0.1.0', platform: 'web', mode: 'ui' },
           role: 'operator',
           scopes: ['operator.read', 'operator.write', 'operator.talk', 'operator.admin'],
         }
