@@ -150,9 +150,10 @@ function deleteProvider(id: string) {
       try {
         const cfg = await client.configGet()
         const hash = cfg?.hash
-        const parsed = JSON.parse(cfg?.raw || '{}')
-        if (parsed?.models?.providers) delete parsed.models.providers[id]
-        await client.configApply(JSON.stringify(parsed, null, 2), hash)
+        if (!hash) throw new Error('无法获取配置版本')
+        // 用 config.patch 局部删除，避免整包替换触发网关校验（如 size-drop / 丢失派生字段）
+        const raw = JSON.stringify({ models: { providers: { [id]: null } } })
+        await client.configPatch(raw, hash, [`models.providers.${id}.models`])
         message.success(`已删除供应商 ${id}`)
         await load()
       } catch (e: any) {

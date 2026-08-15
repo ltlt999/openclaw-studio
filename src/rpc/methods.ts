@@ -112,8 +112,10 @@ export class GatewayClient {
   configSchema() {
     return this.conn.request('config.schema')
   }
-  configPatch(raw: string, baseHash: string) {
-    return this.conn.request('config.patch', { raw, baseHash })
+  configPatch(raw: string, baseHash: string, replacePaths?: string[]) {
+    const params: Record<string, any> = { raw, baseHash }
+    if (replacePaths?.length) params.replacePaths = replacePaths
+    return this.conn.request('config.patch', params)
   }
   configApply(raw: string, baseHash: string) {
     return this.conn.request('config.apply', { raw, baseHash })
