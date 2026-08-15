@@ -129,6 +129,9 @@ export class GatewayClient {
   usage() {
     return this.conn.request('sessions.usage')
   }
+  usageTimeseries(key: string) {
+    return this.conn.request('sessions.usage.timeseries', { key })
+  }
   usageTimeseries(opts?: Record<string, any>) {
     return this.conn.request('sessions.usage.timeseries', opts)
   }

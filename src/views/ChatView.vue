@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
-import { NEmpty, NInput, NButton, NTag, NModal, NFormItem, NForm, useMessage, useDialog } from 'naive-ui'
+import { NEmpty, NInput, NButton, NTag, NModal, NFormItem, NForm, NSelect, useMessage, useDialog } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient, getConnection } from '../rpc/client'
 import { generateUUID } from '../lib/uuid'
@@ -25,10 +25,20 @@ function sessionTitle(s: Session): string {
   return s.derivedTitle || s.displayName || s.label || s.key
 }
 
+const channelFilter = ref('')
+const channelOptions = computed(() => {
+  const set = new Set<string>()
+  sessions.value.forEach((s) => {
+    if (s.channel) set.add(s.channel)
+  })
+  return Array.from(set).map((c) => ({ label: c, value: c }))
+})
+
 const filteredSessions = computed(() => {
   const q = filter.value.trim().toLowerCase()
-  if (!q) return sessions.value
   return sessions.value.filter((s) => {
+    if (channelFilter.value && s.channel !== channelFilter.value) return false
+    if (!q) return true
     const hay = `${sessionTitle(s)} ${s.key} ${s.channel || ''}`.toLowerCase()
     return hay.includes(q)
   })
@@ -276,6 +286,14 @@ onUnmounted(() => {
       </div>
       <div class="sessions-search">
         <n-input v-model:value="filter" size="small" placeholder="搜索会话…" clearable />
+        <n-select
+          v-if="channelOptions.length"
+          v-model:value="channelFilter"
+          size="small"
+          placeholder="全部渠道"
+          :options="[{ label: '全部渠道', value: '' }, ...channelOptions]"
+          clearable
+        />
       </div>
       <div class="sessions-list">
         <div
@@ -446,6 +464,9 @@ onUnmounted(() => {
 
 .sessions-search {
   padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .sessions-list {
