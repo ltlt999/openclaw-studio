@@ -33,7 +33,8 @@ const device = loadOrCreateDeviceIdentity(deviceStateDir)
 let deviceToken = loadStoredDeviceToken(deviceStateDir)
 
 // 读取配置中的模型供应商（含真实 apiKey，供「获取模型」使用；原生安装可读到）
-const providerConfigs = (() => {
+// 每次调用重新读取，确保 UI 保存的新密钥能立即生效
+function loadProviderConfigs() {
   try {
     const p = gatewayCfg?.path
     if (!p || !fs.existsSync(p)) return null
@@ -42,7 +43,7 @@ const providerConfigs = (() => {
   } catch {
     return null
   }
-})()
+}
 
 function resolveGateway() {
   const explicit = arg('--gateway', process.env.OPENCLAW_STUDIO_GATEWAY)
@@ -212,7 +213,7 @@ const server = http.createServer((req, res) => {
         let t = apiType
         // 编辑供应商时：浏览器不持有真实密钥，若给了 providerId 则用配置里的密钥
         if (providerId && (!k || k === '__OPENCLAW_REDACTED__')) {
-          const p = providerConfigs?.[providerId]
+          const p = loadProviderConfigs()?.[providerId]
           if (p) {
             b = b || p.baseUrl
             k = p.apiKey

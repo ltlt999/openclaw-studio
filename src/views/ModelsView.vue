@@ -204,7 +204,8 @@ async function saveProvider() {
     if (apiKey) provider.apiKey = apiKey // 编辑时留空则保留原密钥
     if (models.length) provider.models = models
     const raw = JSON.stringify({ models: { providers: { [id]: provider } } })
-    await client.configPatch(raw, hash)
+    // models 数组整体替换需要 replacePaths，否则网关会拒绝
+    await client.configPatch(raw, hash, models.length ? [`models.providers.${id}.models`] : undefined)
     message.success(`已保存供应商 ${id}`)
     showAdd.value = false
     resetForm()
