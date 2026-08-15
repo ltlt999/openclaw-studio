@@ -66,7 +66,16 @@ async function setDefault(modelId: string) {
     const cfg = await client.configGet()
     const hash = cfg?.hash
     if (!hash) throw new Error('无法获取配置版本')
-    const patch = JSON.stringify({ agents: { defaults: { model: { primary: modelId } } } })
+    // 同时设置 primary 并把模型加入白名单 agents.defaults.models，
+    // 否则 OpenClaw 会忽略白名单外的 primary，运行时仍用旧模型
+    const patch = JSON.stringify({
+      agents: {
+        defaults: {
+          model: { primary: modelId },
+          models: { [modelId]: {} },
+        },
+      },
+    })
     await client.configPatch(patch, hash)
     currentModel.value = modelId
     message.success(`已切换默认模型：${modelId}`)
