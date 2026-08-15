@@ -50,7 +50,7 @@ function fmtCost(n: number): string {
 function aggregate(field: string) {
   const map = new Map<string, number>()
   sessions.value.forEach((s: any) => {
-    const k = s[field] || 'unknown'
+    const k = s[field] || '其他'
     map.set(k, (map.get(k) || 0) + (s.usage?.totalTokens || 0))
   })
   const arr = Array.from(map.entries()).map(([name, value]) => ({ name, value }))
@@ -159,8 +159,8 @@ async function loadTrend() {
     try {
       const ts = await client.usageTimeseries(sess.key)
       allPoints.push(...(ts?.points || []))
-    } catch {
-      // 单会话趋势失败忽略
+    } catch (e: any) {
+      console.error('[trend] timeseries err', sess.key, e?.message)
     }
   }
   const byDay = new Map<string, number>()

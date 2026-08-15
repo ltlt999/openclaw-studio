@@ -116,16 +116,19 @@ async function confirmRename() {
 }
 
 const dialog = useDialog()
+let deleteKey: string | null = null
 function deleteSession() {
   if (!activeKey.value || !activeSession.value) return
+  deleteKey = activeKey.value // 打开确认框时固定要删的 key，避免确认时失效
   dialog.warning({
     title: '删除会话',
     content: `确定删除会话「${sessionTitle(activeSession.value)}」吗？删除后无法恢复。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      if (!deleteKey) return
       try {
-        await client.sessionsDelete({ key: activeKey.value!, deleteTranscript: true })
+        await client.sessionsDelete({ key: deleteKey, deleteTranscript: true })
         message.success('会话已删除')
         activeKey.value = null
         activeSessionId.value = undefined

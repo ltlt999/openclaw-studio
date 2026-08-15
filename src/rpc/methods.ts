@@ -39,9 +39,6 @@ export class GatewayClient {
   sessionsDescribe(key: string) {
     return this.conn.request('sessions.describe', { key })
   }
-  sessionsCreate(params?: Record<string, any>) {
-    return this.conn.request('sessions.create', params)
-  }
   sessionsPatch(params: Record<string, any>) {
     return this.conn.request('sessions.patch', params)
   }
@@ -53,9 +50,6 @@ export class GatewayClient {
   }
   sessionsCreate(params?: Record<string, any>) {
     return this.conn.request('sessions.create', params || {})
-  }
-  sessionsDelete(key: string) {
-    return this.conn.request('sessions.delete', { key })
   }
   sessionsReset(key: string) {
     return this.conn.request('sessions.reset', { key })
@@ -131,8 +125,5 @@ export class GatewayClient {
   }
   usageTimeseries(key: string) {
     return this.conn.request('sessions.usage.timeseries', { key })
-  }
-  usageTimeseries(opts?: Record<string, any>) {
-    return this.conn.request('sessions.usage.timeseries', opts)
   }
 }
