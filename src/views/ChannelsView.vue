@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from 'vue'
 import { NSpin, NEmpty, NTag, NButton, NModal, useMessage } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient } from '../rpc/client'
+import SchemaForm from '../components/SchemaForm.vue'
 import ConfigEditor from '../components/ConfigEditor.vue'
 
 interface ChannelItem {
@@ -47,6 +48,7 @@ const loading = ref(false)
 const editingChannel = ref<string | null>(null)
 const showConfig = ref(false)
 const channelConfig = ref<any>({})
+const channelSchema = ref<any>(null)
 const hash = ref<string>('')
 const saving = ref(false)
 
@@ -95,11 +97,19 @@ async function openConfig(channelId: string) {
   editingChannel.value = channelId
   showConfig.value = true
   channelConfig.value = {}
+  channelSchema.value = null
   try {
     const cfg = await client.configGet()
     hash.value = cfg?.hash ?? ''
     const parsed = JSON.parse(cfg?.raw || '{}')
     channelConfig.value = parsed?.channels?.[channelId] ?? {}
+    // 加载该渠道的 schema 用于表单生成
+    try {
+      const schema = await client.configSchema()
+      channelSchema.value = schema?.schema?.properties?.channels?.properties?.[channelId] ?? null
+    } catch (e) {
+      console.error(e)
+    }
   } catch (e) {
     console.error(e)
   }
@@ -160,11 +170,12 @@ onMounted(() =>
       <n-empty v-else-if="!loading" description="暂无渠道数据" />
     </n-spin>
 
-    <n-modal v-model:show="showConfig" preset="card" style="width: 560px" :title="`渠道配置：${editingChannel}`">
+    <n-modal v-model:show="showConfig" preset="card" style="width: 600px" :title="`渠道配置：${editingChannel}`">
       <div v-if="editingChannel" class="channel-tip">
-        配置 <b>{{ editingChannel }}</b> 的字段（如 telegram 需要 botToken 等）。保存后自动启用。
+        填表格即可，必填项带 <span class="req">*</span>。复杂字段展开为 JSON。
       </div>
-      <ConfigEditor :value="channelConfig" @save="saveChannel" />
+      <SchemaForm v-if="channelSchema" :schema="channelSchema" :value="channelConfig" @save="saveChannel" />
+      <ConfigEditor v-else :value="channelConfig" @save="saveChannel" />
     </n-modal>
   </div>
 </template>
@@ -218,5 +229,8 @@ onMounted(() =>
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 10px;
+}
+.req {
+  color: #e88080;
 }
 </style>
