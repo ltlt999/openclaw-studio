@@ -16,22 +16,13 @@
 
 > 前提：目标机器已安装 OpenClaw 且 Node.js ≥ 22（Windows / macOS / Linux 均可）。
 
-### 方式一：从源码安装（当前可用）
+### 从源码安装
 
 ```bash
 git clone https://github.com/ltlt999/openclaw-studio.git
 cd openclaw-studio
 npm install
 npm run build
-```
-
-### 方式二：npm 一条命令（发布到 npm 后可用）
-
-```bash
-npm install -g openclaw-studio
-
-# 零安装直接运行
-npx openclaw-studio
 ```
 
 ## 启动
@@ -47,11 +38,7 @@ node bin/cli.mjs
 ### 远程访问（服务器部署）
 
 ```bash
-# 方式一安装的启动方式
 node bin/cli.mjs --host 0.0.0.0 --port 41739 --gateway ws://127.0.0.1:18789
-
-# 方式二安装的启动方式
-openclaw-studio --host 0.0.0.0 --port 41739 --gateway ws://127.0.0.1:18789
 ```
 
 浏览器访问 `http://<服务器IP>:41739`。
