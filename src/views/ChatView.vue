@@ -47,12 +47,36 @@ const filteredSessions = computed(() => {
 const activeSession = computed(() => sessions.value.find((s) => s.key === activeKey.value))
 const isRunning = computed(() => activeSession.value?.status === 'running')
 
+// 是否在等待 AI 回复（用于显示「正在回答…」状态）
+const waitingReply = ref(false)
+const noResponse = ref(false)
+function updateWaitingState() {
+  if (!waitingReply.value) return
+  const status = activeSession.value?.status
+  const hasAssistantContent = entries.value.some((m) => m.role === 'assistant' && messageText(m))
+  if (status && status !== 'running' && status !== 'queued') {
+    // 会话已结束（done/failed/killed/timeout）
+    waitingReply.value = false
+    if (!hasAssistantContent && (status === 'failed' || status === 'killed' || status === 'timeout')) {
+      // 无回复且失败 → 显示「无响应」几秒
+      noResponse.value = true
+      setTimeout(() => {
+        noResponse.value = false
+      }, 3000)
+    }
+  } else if (hasAssistantContent && status !== 'running') {
+    // 已有回复内容但会话不活跃，视为完成
+    waitingReply.value = false
+  }
+}
+
 async function loadSessions() {
   if (!conn.connected) return
   loading.value = true
   try {
     const data = await client.sessionsList()
     sessions.value = Array.isArray(data) ? data : data?.sessions ?? []
+    updateWaitingState()
   } catch (e) {
     console.error(e)
   } finally {
@@ -65,6 +89,7 @@ async function loadHistory(key: string) {
     const data = await client.chatHistory({ sessionKey: key, limit: 200 })
     entries.value = Array.isArray(data) ? data : data?.entries ?? data?.messages ?? []
     if (data && !Array.isArray(data)) activeSessionId.value = data.sessionId ?? activeSessionId.value
+    updateWaitingState()
   } catch (e: any) {
     console.error(e)
     if (e?.message) message.error(e.message)
@@ -164,7 +189,9 @@ async function send() {
   if (!text || !activeKey.value || sending.value) return
   sending.value = true
   input.value = ''
+  // 立即显示我发送的消息（乐观更新），不立即重载以免被旧历史覆盖
   entries.value.push({ id: `local-${Date.now()}`, role: 'user', text })
+  waitingReply.value = true
   try {
     await client.chatSend({
       sessionKey: activeKey.value,
@@ -173,9 +200,10 @@ async function send() {
       deliver: false,
       idempotencyKey: generateUUID(),
     })
-    await loadHistory(activeKey.value)
+    // 实时更新由 session.message / sessions.changed 事件驱动，不主动重载
   } catch (e: any) {
     console.error(e)
+    waitingReply.value = false
     if (e?.message) message.error(e.message)
   } finally {
     sending.value = false
@@ -395,6 +423,11 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="isRunning" class="typing">正在输入…</div>
+        </div>
+        <div class="reply-status" v-if="waitingReply || noResponse">
+          <span class="reply-dot" :class="{ running: isRunning && waitingReply, error: noResponse }"></span>
+          <span v-if="noResponse">无响应（可能模型未配置或出错）</span>
+          <span v-else-if="waitingReply">{{ isRunning ? '正在回答…' : '等待回复…' }}</span>
         </div>
         <div class="input-bar">
           <n-input
@@ -714,5 +747,36 @@ onUnmounted(() => {
   gap: 10px;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
+}
+
+.reply-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.reply-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666670;
+  flex-shrink: 0;
+}
+
+.reply-dot.running {
+  background: #63a4ff;
+  animation: reply-pulse 1s infinite;
+}
+
+.reply-dot.error {
+  background: #e88080;
+}
+
+@keyframes reply-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 </style>
