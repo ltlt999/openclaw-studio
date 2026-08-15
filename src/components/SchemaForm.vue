@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { NInput, NInputNumber, NSwitch, NSelect, NButton, NAlert } from 'naive-ui'
+import { fieldLabel } from '../i18n/fields'
 
 const props = defineProps<{ schema: any; value: any }>()
 const emit = defineEmits<{ (e: 'save', json: string): void }>()
@@ -32,10 +33,6 @@ function isPassword(key: string): boolean {
   return /token|secret|key|password|auth/i.test(key)
 }
 
-function label(key: string): string {
-  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim()
-}
-
 function get(key: string): any {
   return data.value?.[key]
 }
@@ -53,7 +50,7 @@ const fields = computed(() => {
       const ev = enumValues(s)
       return {
         key,
-        label: label(key),
+        label: fieldLabel(key),
         required: requiredKeys.value.has(key),
         type:
           s.type === 'boolean' ? 'boolean'
@@ -70,7 +67,7 @@ const complexFields = computed(() => {
   const propsSchema = props.schema?.properties ?? {}
   return Object.entries(propsSchema)
     .filter(([, s]) => isComplex(s))
-    .map(([key]) => ({ key, label: label(key) }))
+    .map(([key]) => ({ key, label: fieldLabel(key) }))
 })
 
 const complexText = ref<Record<string, string>>({})

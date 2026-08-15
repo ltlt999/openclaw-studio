@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { NCollapse, NCollapseItem, NInput, NInputNumber, NSwitch, NButton, NAlert, NInputGroup } from 'naive-ui'
+import { fieldLabel } from '../i18n/fields'
 
 const props = defineProps<{ value: any }>()
 const emit = defineEmits<{ (e: 'save', json: string): void }>()
@@ -79,8 +80,9 @@ function setArrayText(path: string[], text: string) {
   }
 }
 
-function fieldLabel(f: Field): string {
-  return f.path.slice(1).join(' / ') || f.key
+function formatLabel(f: Field): string {
+  const segs = f.path.slice(1).map((s) => fieldLabel(s))
+  return segs.join(' / ') || f.key
 }
 
 function save() {
@@ -102,7 +104,7 @@ function save() {
     <n-collapse accordion :default-expanded-names="groups.length ? groups[0].name : undefined">
       <n-collapse-item v-for="g in groups" :key="g.name" :title="g.name" :name="g.name">
         <div v-for="f in g.fields" :key="f.path.join('.')" class="field">
-          <label class="field-label">{{ fieldLabel(f) }}</label>
+          <label class="field-label">{{ formatLabel(f) }}</label>
           <div class="field-control">
             <n-switch
               v-if="f.type === 'boolean'"
