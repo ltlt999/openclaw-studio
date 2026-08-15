@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
-import { NEmpty, NInput, NButton, NTag, NModal, NFormItem, NForm, useMessage } from 'naive-ui'
+import { NEmpty, NInput, NButton, NTag, NModal, NFormItem, NForm, useMessage, useDialog } from 'naive-ui'
 import { useConnectionStore } from '../stores/connection'
 import { getClient, getConnection } from '../rpc/client'
 import { generateUUID } from '../lib/uuid'
@@ -103,6 +103,29 @@ async function confirmRename() {
   } catch (e: any) {
     message.error(e?.message || '重命名失败')
   }
+}
+
+const dialog = useDialog()
+function deleteSession() {
+  if (!activeKey.value || !activeSession.value) return
+  dialog.warning({
+    title: '删除会话',
+    content: `确定删除会话「${sessionTitle(activeSession.value)}」吗？删除后无法恢复。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await client.sessionsDelete({ key: activeKey.value!, deleteTranscript: true })
+        message.success('会话已删除')
+        activeKey.value = null
+        activeSessionId.value = undefined
+        entries.value = []
+        await loadSessions()
+      } catch (e: any) {
+        message.error(e?.message || '删除失败')
+      }
+    },
+  })
 }
 
 async function send() {
@@ -287,7 +310,10 @@ onUnmounted(() => {
       <template v-else>
         <div class="chat-header">
           <span class="chat-header-title">{{ sessionTitle(activeSession) }}</span>
-          <n-button size="tiny" quaternary @click="openRename">重命名</n-button>
+          <div class="chat-header-actions">
+            <n-button size="tiny" quaternary @click="openRename">重命名</n-button>
+            <n-button size="tiny" type="error" quaternary @click="deleteSession">删除</n-button>
+          </div>
         </div>
         <div class="messages">
           <div v-for="m in entries" :key="msgKey(m)" class="msg" :class="m.role">
@@ -393,6 +419,13 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .head-spinner {

@@ -45,6 +45,9 @@ export class GatewayClient {
   sessionsPatch(params: Record<string, any>) {
     return this.conn.request('sessions.patch', params)
   }
+  sessionsDelete(params: Record<string, any>) {
+    return this.conn.request('sessions.delete', params)
+  }
   sessionsResolve(key: string) {
     return this.conn.request('sessions.resolve', { key })
   }
