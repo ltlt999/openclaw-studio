@@ -4,7 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket } from 'ws'
-import { loadGatewayConfig, isLoopbackGateway } from './lib/gateway-config.mjs'
+import {
+  loadGatewayConfig,
+  isLoopbackGateway,
+  candidateConfigPaths,
+} from './lib/gateway-config.mjs'
 import { probeGateway } from './lib/self-check.mjs'
 import {
   loadOrCreateDeviceIdentity,
@@ -34,15 +38,19 @@ let deviceToken = loadStoredDeviceToken(deviceStateDir)
 
 // 读取配置中的模型供应商（含真实 apiKey，供「获取模型」使用；原生安装可读到）
 // 每次调用重新读取，确保 UI 保存的新密钥能立即生效
+// 尝试所有候选配置路径，取第一个含 models.providers 的文件
 function loadProviderConfigs() {
-  try {
-    const p = gatewayCfg?.path
-    if (!p || !fs.existsSync(p)) return null
-    const cfg = JSON.parse(fs.readFileSync(p, 'utf8'))
-    return cfg?.models?.providers ?? null
-  } catch {
-    return null
+  const candidates = candidateConfigPaths({ explicit: arg('--config') })
+  for (const p of candidates) {
+    try {
+      if (!fs.existsSync(p)) continue
+      const cfg = JSON.parse(fs.readFileSync(p, 'utf8'))
+      if (cfg?.models?.providers) return cfg.models.providers
+    } catch {
+      // 尝试下一个
+    }
   }
+  return null
 }
 
 function resolveGateway() {
@@ -213,11 +221,16 @@ const server = http.createServer((req, res) => {
         let t = apiType
         // 编辑供应商时：浏览器不持有真实密钥，若给了 providerId 则用配置里的密钥
         if (providerId && (!k || k === '__OPENCLAW_REDACTED__')) {
-          const p = loadProviderConfigs()?.[providerId]
+          const providers = loadProviderConfigs()
+          const p = providers?.[providerId]
           if (p) {
             b = b || p.baseUrl
             k = p.apiKey
             t = t || p.api
+          } else {
+            console.error(
+              `[openclaw-studio] 配置中未找到供应商「${providerId}」的密钥（现有供应商: ${providers ? Object.keys(providers).join(', ') : '无'}）`,
+            )
           }
         }
         if (!b) throw new Error('缺少 baseUrl')
