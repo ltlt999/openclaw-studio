@@ -3,6 +3,17 @@ import { ref, computed, watch } from 'vue'
 import { NInput, NInputNumber, NSwitch, NSelect, NButton, NAlert } from 'naive-ui'
 import { fieldLabel } from '../i18n/fields'
 
+// 常用字段：默认展开显示这些（其余折叠，点「显示全部」展开）
+const IMPORTANT_KEYS = new Set([
+  'botToken', 'token', 'apiKey', 'name', 'enabled', 'baseUrl',
+  'webhookUrl', 'webhookSecret', 'botUserId', 'agentId', 'model',
+  'workspace', 'username', 'email', 'phoneNumber', 'appId', 'appSecret',
+  'clientId', 'clientSecret', 'signingSecret', 'verificationToken',
+  'accessToken', 'apiId', 'apiHash', 'password', 'userbot',
+  'sessionFile', 'defaultAccount', 'proxyUrl', 'webhookPath',
+  'webhookHost', 'webhookPort', 'modelProvider', 'thinkingDefault',
+])
+
 const props = defineProps<{ schema: any; value: any }>()
 const emit = defineEmits<{ (e: 'save', json: string): void }>()
 
@@ -70,6 +81,24 @@ const complexFields = computed(() => {
     .map(([key]) => ({ key, label: fieldLabel(key) }))
 })
 
+const showAll = ref(false)
+const visibleFields = computed(() => {
+  if (showAll.value) return fields.value
+  return fields.value.filter(
+    (f) => f.required || IMPORTANT_KEYS.has(f.key),
+  )
+})
+const visibleComplex = computed(() => {
+  if (showAll.value) return complexFields.value
+  // 默认只显示必填的复杂字段
+  return complexFields.value.filter((cf) => requiredKeys.value.has(cf.key))
+})
+const hasHidden = computed(
+  () =>
+    fields.value.length > visibleFields.value.length ||
+    complexFields.value.length > visibleComplex.value.length,
+)
+
 const complexText = ref<Record<string, string>>({})
 function getComplexText(key: string): string {
   if (!(key in complexText.value)) {
@@ -108,7 +137,19 @@ function save() {
       复杂字段 JSON 格式有误，请修正后再保存
     </n-alert>
 
-    <div v-for="f in fields" :key="f.key" class="field">
+    <div class="form-head">
+      <span class="form-hint">
+        带 <span class="req">*</span> 为必填；其余留空则使用默认值
+      </span>
+      <n-button v-if="!showAll && hasHidden" size="tiny" quaternary @click="showAll = true">
+        显示全部 {{ fields.length + complexFields.length }} 个字段
+      </n-button>
+      <n-button v-else-if="showAll" size="tiny" quaternary @click="showAll = false">
+        收起
+      </n-button>
+    </div>
+
+    <div v-for="f in visibleFields" :key="f.key" class="field">
       <label class="field-label">
         {{ f.label }}
         <span v-if="f.required" class="req">*</span>
@@ -142,7 +183,7 @@ function save() {
       </div>
     </div>
 
-    <div v-for="f in complexFields" :key="f.key" class="field">
+    <div v-for="f in visibleComplex" :key="f.key" class="field">
       <label class="field-label">{{ f.label }}</label>
       <div class="field-control">
         <textarea
@@ -163,6 +204,17 @@ function save() {
 <style scoped>
 .schema-form {
   width: 100%;
+}
+.form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.form-hint {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .field {
   display: flex;
