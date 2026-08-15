@@ -8,7 +8,32 @@ import ConfigEditor from '../components/ConfigEditor.vue'
 interface ChannelItem {
   id: string
   label: string
-  accountCount: number
+  configured: boolean
+}
+
+const CHANNEL_LABELS: Record<string, string> = {
+  telegram: 'Telegram',
+  discord: 'Discord',
+  slack: 'Slack',
+  whatsapp: 'WhatsApp',
+  imessage: 'iMessage',
+  signal: 'Signal',
+  matrix: 'Matrix',
+  msteams: 'Microsoft Teams',
+  googlechat: 'Google Chat',
+  feishu: '飞书',
+  qqbot: 'QQBot',
+  zalo: 'Zalo',
+  line: 'LINE',
+  irc: 'IRC',
+  nostr: 'Nostr',
+  twitch: 'Twitch',
+  mattermost: 'Mattermost',
+  nextcloud: 'Nextcloud Talk',
+  sms: 'SMS',
+  clickclack: 'ClickClack',
+  raft: 'Raft',
+  tlon: 'Tlon',
 }
 
 const conn = useConnectionStore()
@@ -25,18 +50,39 @@ const channelConfig = ref<any>({})
 const hash = ref<string>('')
 const saving = ref(false)
 
+function channelLabel(id: string, labels: Record<string, string>): string {
+  return labels[id] || CHANNEL_LABELS[id] || id
+}
+
 async function load() {
   if (!conn.connected) return
   loading.value = true
   try {
     const data = await client.channelsStatus()
-    const order: string[] = data?.channelOrder ?? []
     const labels: Record<string, string> = data?.channelLabels ?? {}
-    const accounts: Record<string, any[]> = data?.channelAccounts ?? {}
-    items.value = order.map((id: string) => ({
+    // 已知渠道：优先 schema 枚举（含未配置的），否则用 channelOrder
+    let known: string[] = data?.channelOrder ?? []
+    try {
+      const schema = await client.configSchema()
+      const props = schema?.schema?.properties?.channels?.properties ?? {}
+      const ids = Object.keys(props)
+      if (ids.length) known = ids
+    } catch (e) {
+      console.error(e)
+    }
+    // 已配置的渠道
+    let configured: Record<string, any> = {}
+    try {
+      const cfg = await client.configGet()
+      const parsed = JSON.parse(cfg?.raw || '{}')
+      configured = parsed?.channels ?? {}
+    } catch (e) {
+      console.error(e)
+    }
+    items.value = known.map((id: string) => ({
       id,
-      label: labels[id] || id,
-      accountCount: accounts[id]?.length ?? 0,
+      label: channelLabel(id, labels),
+      configured: Boolean(configured[id]),
     }))
   } catch (e) {
     console.error(e)
@@ -70,6 +116,7 @@ async function saveChannel(json: string) {
     message.success(`已保存渠道配置：${editingChannel.value}`)
     showConfig.value = false
     editingChannel.value = null
+    await load()
   } catch (e: any) {
     message.error(e?.message || '保存失败')
   } finally {
@@ -92,6 +139,7 @@ onMounted(() =>
   <div class="page">
     <div class="page-head">
       <h2>渠道</h2>
+      <span class="hint">点击任意渠道的「配置」即可添加或修改</span>
     </div>
 
     <n-spin :show="loading">
@@ -99,13 +147,13 @@ onMounted(() =>
         <div v-for="c in items" :key="c.id" class="card">
           <div class="card-title-row">
             <span class="card-title">{{ c.label }}</span>
-            <n-tag :type="c.accountCount > 0 ? 'success' : 'default'" size="small" round>
-              {{ c.accountCount > 0 ? '已配置' : '未配置' }}
+            <n-tag :type="c.configured ? 'success' : 'default'" size="small" round>
+              {{ c.configured ? '已配置' : '未配置' }}
             </n-tag>
           </div>
           <div class="card-sub">{{ c.id }}</div>
           <n-button size="small" type="primary" quaternary @click="openConfig(c.id)">
-            配置
+            {{ c.configured ? '修改' : '添加' }}
           </n-button>
         </div>
       </div>
@@ -113,6 +161,9 @@ onMounted(() =>
     </n-spin>
 
     <n-modal v-model:show="showConfig" preset="card" style="width: 560px" :title="`渠道配置：${editingChannel}`">
+      <div v-if="editingChannel" class="channel-tip">
+        配置 <b>{{ editingChannel }}</b> 的字段（如 telegram 需要 botToken 等）。保存后自动启用。
+      </div>
       <ConfigEditor :value="channelConfig" @save="saveChannel" />
     </n-modal>
   </div>
@@ -124,13 +175,23 @@ onMounted(() =>
   height: 100%;
   overflow-y: auto;
 }
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .page-head h2 {
-  margin: 0 0 16px;
+  margin: 0;
   font-size: 18px;
+}
+.hint {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
 .card {
@@ -152,5 +213,10 @@ onMounted(() =>
   font-size: 12px;
   color: var(--text-dim);
   margin: 6px 0 10px;
+}
+.channel-tip {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
 }
 </style>
