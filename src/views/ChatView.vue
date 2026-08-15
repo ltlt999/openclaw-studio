@@ -132,6 +132,45 @@ function messageTools(m: any): any[] {
   return c.filter((b: any) => b && typeof b === 'object' && (b.type === 'tool_call' || b.type === 'toolCall' || b.name))
 }
 
+// 判断是否为工具结果类消息（默认折叠）
+function isToolMessage(m: any): boolean {
+  if (m.role === 'toolResult' || m.role === 'tool_result' || m.role === 'tool') return true
+  const c = m.content
+  if (!Array.isArray(c)) return false
+  return c.some(
+    (b: any) => b && typeof b === 'object' && (b.type === 'tool_result' || b.type === 'toolResult'),
+  )
+}
+
+// 工具结果消息的简短摘要（工具名或结果开头）
+function toolSummary(m: any): string {
+  const c = m.content
+  if (Array.isArray(c)) {
+    for (const b of c) {
+      if (b && typeof b === 'object' && (b.type === 'tool_result' || b.type === 'toolResult')) {
+        const name = b.name || b.toolName || b.tool_name || b.id
+        if (name) return `工具：${name}`
+        const text = b.content || b.output || b.result
+        if (typeof text === 'string') return text.slice(0, 80)
+        if (Array.isArray(text)) return String(text[0]?.text || '').slice(0, 80) || ''
+      }
+    }
+  }
+  return '工具结果'
+}
+
+function msgKey(m: any): string {
+  return m.id || m.messageId || `${m.role}-${m.timestamp || ''}`
+}
+
+const expandedTools = ref<Set<string>>(new Set())
+function toggleTool(key: string) {
+  const s = new Set(expandedTools.value)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
+  expandedTools.value = s
+}
+
 // 实时刷新：会话变更 → 刷新列表；消息事件 → 防抖刷新当前转录
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleReload() {
@@ -207,12 +246,27 @@ onUnmounted(() => {
       </div>
       <template v-else>
         <div class="messages">
-          <div v-for="m in entries" :key="m.id || m.messageId || Math.random()" class="msg" :class="m.role">
+          <div v-for="m in entries" :key="msgKey(m)" class="msg" :class="m.role">
             <div class="msg-role">
               <span>{{ roleLabel(m) }}</span>
               <span v-if="m.timestamp" class="msg-time">{{ formatTime(m.timestamp) }}</span>
             </div>
-            <div class="msg-body">
+
+            <!-- 工具类消息：默认折叠，点击展开 -->
+            <div v-if="isToolMessage(m)" class="tool-msg" :class="{ expanded: expandedTools.has(msgKey(m)) }">
+              <div class="tool-header" @click="toggleTool(msgKey(m))">
+                <span class="tool-chevron">{{ expandedTools.has(msgKey(m)) ? '▾' : '▸' }}</span>
+                <span class="tool-title">工具结果</span>
+                <span class="tool-summary">{{ toolSummary(m) }}</span>
+              </div>
+              <div v-if="expandedTools.has(msgKey(m))" class="tool-body">
+                <Markdown v-if="messageText(m)" :source="messageText(m)" />
+                <pre v-else class="msg-raw">{{ JSON.stringify(m, null, 2) }}</pre>
+              </div>
+            </div>
+
+            <!-- 普通消息 -->
+            <div v-else class="msg-body">
               <Markdown v-if="messageText(m)" :source="messageText(m)" />
               <div v-for="(t, ti) in messageTools(m)" :key="ti" class="tool-call">
                 <span class="tool-name">工具调用: {{ t.name || t.id || 'tool' }}</span>
@@ -407,6 +461,59 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 8px 10px;
   background: #17171c;
+}
+
+.tool-msg {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #17171c;
+  overflow: hidden;
+}
+
+.tool-msg.expanded {
+  border-color: #3a3a44;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool-header:hover {
+  background: #1e1e26;
+}
+
+.tool-chevron {
+  color: #666670;
+  font-size: 12px;
+}
+
+.tool-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7aa2f7;
+}
+
+.tool-summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.tool-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.tool-body .msg-raw {
+  margin: 0;
 }
 
 .tool-name {
