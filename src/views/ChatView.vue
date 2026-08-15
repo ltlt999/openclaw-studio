@@ -49,25 +49,36 @@ const isRunning = computed(() => activeSession.value?.status === 'running')
 
 // 是否在等待 AI 回复（用于显示「正在回答…」状态）
 const waitingReply = ref(false)
+const replying = ref(false)
 const noResponse = ref(false)
+let replyTimeout: ReturnType<typeof setTimeout> | null = null
+// 发送前的消息 ID 集合，用于判断是否出现了本次运行的新回复
+let sentMessageIds = new Set<string>()
 function updateWaitingState() {
   if (!waitingReply.value) return
   const status = activeSession.value?.status
-  const hasAssistantContent = entries.value.some((m) => m.role === 'assistant' && messageText(m))
-  if (status && status !== 'running' && status !== 'queued') {
-    // 会话已结束（done/failed/killed/timeout）
+  const hasNewContent = entries.value.some(
+    (m) => (m.role === 'assistant' || m.role === 'toolResult') && !sentMessageIds.has(m.id || m.messageId),
+  )
+  if (status === 'failed' || status === 'killed' || status === 'timeout') {
+    // 明确失败/超时
     waitingReply.value = false
-    if (!hasAssistantContent && (status === 'failed' || status === 'killed' || status === 'timeout')) {
-      // 无回复且失败 → 显示「无响应」几秒
+    if (replyTimeout) clearTimeout(replyTimeout)
+    if (!hasNewContent) {
       noResponse.value = true
       setTimeout(() => {
         noResponse.value = false
       }, 3000)
     }
-  } else if (hasAssistantContent && status !== 'running') {
-    // 已有回复内容但会话不活跃，视为完成
-    waitingReply.value = false
+    return
   }
+  if (status === 'done' && hasNewContent) {
+    // 完成且已收到本次回复
+    waitingReply.value = false
+    if (replyTimeout) clearTimeout(replyTimeout)
+    return
+  }
+  // running / queued / done 但尚无新回复 → 保持等待，指示持续显示
 }
 
 async function loadSessions() {
@@ -190,8 +201,16 @@ async function send() {
   sending.value = true
   input.value = ''
   // 立即显示我发送的消息（乐观更新），不立即重载以免被旧历史覆盖
+  sentMessageIds = new Set(entries.value.map((m) => m.id || m.messageId))
   entries.value.push({ id: `local-${Date.now()}`, role: 'user', text })
   waitingReply.value = true
+  replying.value = false
+  noResponse.value = false
+  // 安全超时：2 分钟未收到完成/失败信号则清除等待（视为卡住）
+  if (replyTimeout) clearTimeout(replyTimeout)
+  replyTimeout = setTimeout(() => {
+    waitingReply.value = false
+  }, 120000)
   try {
     await client.chatSend({
       sessionKey: activeKey.value,
@@ -304,13 +323,34 @@ const offMessage = connection.on('session.message', (p: any) => {
   const k = p?.sessionKey ?? p?.key
   if (k && k === activeKey.value) scheduleReload()
 })
+// chat 事件流式推送回复：deltaText 表示正在输出，stopReason 表示回复完成
+const offChat = connection.on('chat', (p: any) => {
+  if (p?.sessionKey && p.sessionKey !== activeKey.value) return
+  if (p?.deltaText) {
+    replying.value = true
+    waitingReply.value = true
+  }
+  if (p?.stopReason) {
+    replying.value = false
+    waitingReply.value = false
+    if (replyTimeout) clearTimeout(replyTimeout)
+  }
+})
 
 let stopWatch: (() => void) | null = null
 onMounted(() => {
   stopWatch = watch(
     () => conn.status,
     (s) => {
-      if (s === 'connected') loadSessions()
+      if (s === 'connected') {
+        loadSessions()
+        // 订阅会话变更事件，实时更新会话状态（如 running/done），驱动「正在回答…」
+        try {
+          client.sessionsSubscribe()
+        } catch (e) {
+          console.error('订阅会话失败', e)
+        }
+      }
     },
     { immediate: true },
   )
@@ -319,7 +359,9 @@ onUnmounted(() => {
   stopWatch?.()
   offSessions()
   offMessage()
+  offChat()
   if (reloadTimer) clearTimeout(reloadTimer)
+  if (replyTimeout) clearTimeout(replyTimeout)
   if (subscribedKey) {
     try {
       client.sessionsMessagesUnsubscribe(subscribedKey)
@@ -425,9 +467,9 @@ onUnmounted(() => {
           <div v-if="isRunning" class="typing">正在输入…</div>
         </div>
         <div class="reply-status" v-if="waitingReply || noResponse">
-          <span class="reply-dot" :class="{ running: isRunning && waitingReply, error: noResponse }"></span>
+          <span class="reply-dot" :class="{ running: replying && waitingReply, error: noResponse }"></span>
           <span v-if="noResponse">无响应（可能模型未配置或出错）</span>
-          <span v-else-if="waitingReply">{{ isRunning ? '正在回答…' : '等待回复…' }}</span>
+          <span v-else-if="waitingReply">{{ replying ? '正在回答…' : '等待回复…' }}</span>
         </div>
         <div class="input-bar">
           <n-input
