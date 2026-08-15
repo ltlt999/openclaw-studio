@@ -1,6 +1,6 @@
 # OpenClaw Studio
 
-一个更好用的 OpenClaw Web 控制台，界面与交互对标 Hermes Studio，作为官方 Control UI 的独立替代方案。独立端口运行，不覆盖官方 UI。
+一个更好用的 OpenClaw Web 控制台，界面简洁清晰、操作直观，作为官方 Control UI 的独立替代方案。独立端口运行，不覆盖官方 UI。
 
 ## 特性
 

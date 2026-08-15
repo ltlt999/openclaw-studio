@@ -2,7 +2,7 @@
 
 - 日期：2026-08-14
 - 状态：待用户评审
-- 目标：为 OpenClaw 构建一个更好用的 Web 控制台，界面与交互对标 Hermes Studio，作为官方 Control UI 的替代（独立端口运行，不覆盖官方 UI），并支持发布到 GitHub、一条命令安装到任何装有 OpenClaw 的机器。
+- 目标：为 OpenClaw 构建一个更好用的 Web 控制台，界面与交互参考 Hermes Studio 的设计，作为官方 Control UI 的替代（独立端口运行，不覆盖官方 UI），并支持发布到 GitHub、一条命令安装到任何装有 OpenClaw 的机器。
 
 ## 1. 背景与目标
 
@@ -109,7 +109,7 @@ OpenClaw 是一个多通道 AI Agent 网关（Gateway），官方自带的 Contr
 
 ## 7. 页面与交互设计
 
-布局：左侧导航栏 + 主内容区；深色默认，浅色可切换；整体对标 Hermes Studio 的视觉风格。
+布局：左侧导航栏 + 主内容区；深色默认，浅色可切换；整体参考 Hermes Studio 的视觉风格。
 
 ### 7.1 聊天（核心）
 
