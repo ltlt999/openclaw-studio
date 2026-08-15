@@ -2,6 +2,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket } from 'ws'
 import {
@@ -36,9 +37,9 @@ const deviceStateDir = defaultStateDir()
 const device = loadOrCreateDeviceIdentity(deviceStateDir)
 let deviceToken = loadStoredDeviceToken(deviceStateDir)
 
-// 读取配置中的模型供应商（含真实 apiKey，供「获取模型」使用；原生安装可读到）
+// 读取配置中的模型供应商（含真实 apiKey，供「获取模型」使用）
 // 每次调用重新读取，确保 UI 保存的新密钥能立即生效
-// 尝试所有候选配置路径，取第一个含 models.providers 的文件
+// 1) 尝试宿主机所有候选配置路径；2) 找不到时尝试从 Docker 容器读取 OpenClaw 配置
 function loadProviderConfigs() {
   const candidates = candidateConfigPaths({ explicit: arg('--config') })
   for (const p of candidates) {
@@ -49,6 +50,23 @@ function loadProviderConfigs() {
     } catch {
       // 尝试下一个
     }
+  }
+  // 兜底：OpenClaw 装在 Docker 时，从容器里读取配置
+  try {
+    const containers = execSync('docker ps --format {{.Names}}', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .trim()
+      .split('\n')
+    const oc = containers.find((c) => c.toLowerCase().includes('openclaw'))
+    if (oc) {
+      const raw = execSync(
+        `docker exec ${oc} sh -c "cat /home/node/.openclaw/openclaw.json 2>/dev/null || cat /root/.openclaw/openclaw.json 2>/dev/null"`,
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+      )
+      const cfg = JSON.parse(raw)
+      if (cfg?.models?.providers) return cfg.models.providers
+    }
+  } catch {
+    // docker 不可用或无 openclaw 容器，忽略
   }
   return null
 }
